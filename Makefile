@@ -1,4 +1,4 @@
-.PHONY: check backend-check frontend-check backend-dev frontend-dev dev smoke-local smoke status publish-dry publish
+.PHONY: check backend-check frontend-check backend-dev frontend-dev dev smoke-local smoke status
 
 check: backend-check frontend-check
 
@@ -34,10 +34,6 @@ status:
 	git status --short --branch
 	docker compose ps
 
-# 单向导出到公开 repo（详见 publish/）。push 是红线，脚本只提交不推送。
-publish-dry:
-	bash publish/publish.sh --dry-run
-
-publish:
-	@test -n "$(DIR)" || { echo "用法: make publish DIR=<已克隆的公开repo目录>"; exit 2; }
-	bash publish/publish.sh --to "$(DIR)"
+# 单向导出到公开 repo 的目标在 publish/targets.mk（私有，不导出）。
+# 公开仓无此文件时 -include 自动跳过，保持公开 Makefile 干净。
+-include publish/targets.mk
