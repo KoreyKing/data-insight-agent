@@ -16,19 +16,27 @@ AI 数据分析 Agent：CSV/Excel 或数据库 + 用户自配 OpenAI-compatible 
 data-insight-agent/
 ├── backend/
 │   ├── app/
+│   │   ├── main.py             # FastAPI 入口 + 路由 + 托管前端静态产物（SPA fallback）
+│   │   ├── config.py           # 配置（LLM_* 等，pydantic-settings）
 │   │   ├── api/                # FastAPI 路由层
 │   │   ├── modules/            # 分析引擎 + 有界 agentic 循环工具（契约见 docs/architecture.md）
 │   │   ├── scheduler/          # APScheduler 任务管理
 │   │   ├── db/                 # 数据模型 + 迁移
 │   │   ├── llm/                # 厂商中立 OpenAI-compatible 客户端与 provider preset
+│   │   ├── context_packs/      # 行业 Context Pack JSON
 │   │   └── sample_data/        # 内置零售样例数据
+│   ├── scripts/                # 样例数据生成脚本
 │   └── tests/                  # 后端测试
-├── frontend/
-│   └── src/{pages,components,api,lib}/
+├── frontend/src/
+│   ├── AppShell.tsx            # 三栏外壳 + 状态机入口
+│   ├── components/             # 组件（Conversation / ArtifactPane / Sidebar / charts）
+│   ├── api/ · lib/ · styles/   # API 客户端 / 状态机工具 / 样式（app.css 含 @media print）
+│   └── pages/                  # 预留
 ├── docs/architecture.md        # 架构契约
-├── Dockerfile                  # 单容器多阶段构建
-├── docker-compose.yml          # 用户态（预构建镜像一行起）
+├── Dockerfile                  # 单容器多阶段构建（前端 build → 后端托管 dist）
+├── docker-compose.yml          # 用户态（拉预构建镜像一行起）
 ├── docker-compose.dev.yml      # 本地构建态
+├── Makefile, .github/workflows/  # 验证入口 / CI + 镜像构建推送
 └── .env.example
 ```
 
