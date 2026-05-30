@@ -1,0 +1,89 @@
+/* ========================================================================
+ * Data Insight Agent — design tokens + base
+ * ====================================================================== */
+
+:root {
+  /* Surfaces — warm cream system */
+  --bg-canvas: #EFEAE0;
+  --bg-app: #F5F1E8;
+  --bg-panel: #FBF8F1;
+  --bg-panel-2: #FFFEFA;
+  --bg-elev: #FFFFFE;
+  --bg-rail: #EAE4D6;
+
+  /* Ink */
+  --ink-1: #14201C;
+  --ink-2: #3B4A43;
+  --ink-3: #6B7770;
+  --ink-4: #98A19A;
+  --ink-5: #C2C8C0;
+
+  /* Forest primary */
+  --forest-900: #0B2018;
+  --forest-800: #102C22;
+  --forest-700: #16402F;
+  --forest-600: #1F5440;
+  --forest-500: #2A6953;
+  --forest-400: #4D8772;
+  --forest-300: #84A99A;
+  --forest-200: #C5D5CD;
+  --forest-100: #E3ECE6;
+  --forest-50:  #EEF3EF;
+
+  /* Accents */
+  --amber-500: #B7821B;
+  --amber-400: #C99C3A;
+  --amber-100: #F2E6C8;
+  --amber-50:  #F8F0DA;
+
+  --rust-600: #9C4A28;
+  --rust-500: #B85A30;
+  --rust-400: #C77452;
+  --rust-100: #F0D7CB;
+  --rust-50:  #F8E8DE;
+
+  --sky-500: #2D6E8C;
+  --sky-100: #D7E6ED;
+  --sky-50:  #E8F0F4;
+
+  /* Borders */
+  --line-soft: #E4DECF;
+  --line-mid:  #D3CCB8;
+  --line-strong: #B5AC92;
+  --line-divide: #ECE6D6;
+
+  /* Type stacks */
+  --font-sans: "Helvetica Neue", "Helvetica", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --font-serif: "Source Serif 4", "Source Serif Pro", Georgia, "Songti SC", serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  /* Radii */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  /* Shadows */
+  --sh-1: 0 1px 0 rgba(20,32,28,0.04);
+  --sh-2: 0 1px 2px rgba(20,32,28,0.05), 0 1px 0 rgba(20,32,28,0.02);
+  --sh-3: 0 6px 18px -8px rgba(20,32,28,0.12), 0 2px 4px rgba(20,32,28,0.05);
+  --sh-pop: 0 18px 48px -20px rgba(11,32,24,0.30), 0 4px 12px rgba(11,32,24,0.06);
+}
+
+/* Graphite / charcoal variant via [data-tone] */
+[data-tone="graphite"] {
+  --forest-900: #14181A;
+  --forest-800: #1B2226;
+  --forest-700: #232C30;
+  --forest-600: #2E3940;
+  --forest-500: #3B4750;
+  --forest-400: #6A7682;
+  --forest-300: #9CA6AD;
+  --forest-200: #D2D6DA;
+  --forest-100: #E6E8EA;
+  --forest-50:  #EFF1F2;
+  --amber-500: #9C6A0F;
+  --amber-400: #B98620;
+}
+

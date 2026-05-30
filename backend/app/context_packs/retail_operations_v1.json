@@ -1,0 +1,299 @@
+{
+  "meta": {
+    "name": "Retail Operations",
+    "version": "1.0.0",
+    "description": "零售经营分析示例 Context Pack。覆盖销售、商品、门店、渠道、客户类型的周度经营复盘。"
+  },
+  "business_context": {
+    "company_description": "一家中小型多渠道零售商，业务覆盖线下门店与线上渠道（天猫 / 抖音 / 小程序）。每日产生订单、退款、商品销售记录。门店分布在华东、华南、华北、西南四大区域，包含旗舰店、标准店和快闪店三种业态。商品涵盖服装、配饰、童装、鞋履四个一级类目。",
+    "domain_notes": "零售存在明显星期效应，周度复盘按自然周对齐；退款率通常滞后销售 1-2 周；客单价下降需结合订单数、新客占比和渠道活动一起判断。"
+  },
+  "data_dictionary": {
+    "tables": [
+      {
+        "name": "sales_orders",
+        "description": "销售订单事实表，每行一笔订单明细。",
+        "columns": [
+          {
+            "name": "order_id",
+            "description": "订单唯一编号",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["订单号", "订单编号", "交易编号"]
+          },
+          {
+            "name": "order_date",
+            "description": "订单日期",
+            "data_type": "date",
+            "is_sensitive": false,
+            "aliases": ["date", "日期", "订单日期", "交易日期", "下单日期", "成交日期"]
+          },
+          {
+            "name": "store_id",
+            "description": "门店编号",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["门店编号", "店铺编号", "store"]
+          },
+          {
+            "name": "store_name",
+            "description": "门店名称",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["store", "门店", "门店名称", "店铺", "店铺名称"]
+          },
+          {
+            "name": "product_id",
+            "description": "商品 SKU 编号",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["商品编号", "SKU", "sku_id"]
+          },
+          {
+            "name": "product_name",
+            "description": "商品名称",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["商品", "商品名称", "SKU名称"]
+          },
+          {
+            "name": "category_l1",
+            "description": "一级类目",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["category", "类目", "一级类目", "商品类目", "品类", "一级品类"]
+          },
+          {
+            "name": "category_l2",
+            "description": "二级类目",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["二级类目", "细分类目", "二级品类"]
+          },
+          {
+            "name": "channel",
+            "description": "销售渠道",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["渠道", "销售渠道", "来源渠道", "下单渠道"]
+          },
+          {
+            "name": "customer_type",
+            "description": "客户类型",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["客户类型", "新老客", "会员类型"]
+          },
+          {
+            "name": "quantity",
+            "description": "销售数量",
+            "data_type": "int",
+            "is_sensitive": false,
+            "aliases": ["qty", "数量", "销售数量", "件数"]
+          },
+          {
+            "name": "gross_sales_amount",
+            "description": "应付销售额",
+            "data_type": "decimal",
+            "is_sensitive": false,
+            "aliases": ["应付金额", "应付销售额", "原价金额"]
+          },
+          {
+            "name": "discount_amount",
+            "description": "折扣金额",
+            "data_type": "decimal",
+            "is_sensitive": false,
+            "aliases": ["折扣", "折扣金额", "优惠金额"]
+          },
+          {
+            "name": "net_sales_amount",
+            "description": "订单净销售额（元）",
+            "data_type": "decimal",
+            "is_sensitive": false,
+            "aliases": ["net_sales", "net sales", "sales", "GMV", "销售额", "净销售额", "营业额", "实付金额", "实收销售额"]
+          },
+          {
+            "name": "order_status",
+            "description": "订单状态",
+            "data_type": "string",
+            "is_sensitive": false,
+            "aliases": ["订单状态", "状态", "交易状态"]
+          },
+          {
+            "name": "refund_amount",
+            "description": "退款金额",
+            "data_type": "decimal",
+            "is_sensitive": false,
+            "aliases": ["退款", "退款金额", "退货金额"]
+          },
+          {
+            "name": "unit_cost",
+            "description": "单位成本",
+            "data_type": "decimal",
+            "is_sensitive": false,
+            "aliases": ["成本", "单位成本", "单件成本"]
+          }
+        ],
+        "common_joins": [
+          "LEFT JOIN stores ON sales_orders.store_id = stores.store_id",
+          "LEFT JOIN products ON sales_orders.product_id = products.product_id"
+        ]
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "name": "销售额",
+      "calculation": "SUM(net_sales_amount) WHERE order_status IN ('completed', 'partial_refund')",
+      "unit": "元",
+      "aliases": ["GMV", "营业额", "净销售额", "net sales"],
+      "time_grain": "daily",
+      "notes": "包含部分退款订单的净销售贡献；完全退款订单不计入。"
+    },
+    {
+      "name": "订单数",
+      "calculation": "COUNT(DISTINCT order_id) WHERE order_status != 'refunded'",
+      "unit": "单",
+      "aliases": ["订单量", "客流", "orders"],
+      "time_grain": "daily",
+      "notes": "完全退款订单不计入。客流用订单数代理。"
+    },
+    {
+      "name": "客单价",
+      "calculation": "销售额 / 订单数",
+      "unit": "元",
+      "aliases": ["AOV", "average order value", "单均价"],
+      "time_grain": "daily",
+      "notes": "客单价下降需配合订单数与新客占比综合判断。"
+    },
+    {
+      "name": "退款率",
+      "calculation": "COUNT(CASE WHEN order_status IN ('refunded', 'partial_refund') THEN 1 END) / COUNT(*)",
+      "unit": "%",
+      "aliases": ["return rate", "refund ratio"],
+      "time_grain": "daily",
+      "notes": "退款率单周突增超过 5 个百分点应排查具体 SKU 与门店。"
+    },
+    {
+      "name": "毛利额",
+      "calculation": "SUM(net_sales_amount - quantity * unit_cost) WHERE order_status IN ('completed', 'partial_refund')",
+      "unit": "元",
+      "aliases": ["gross profit", "毛利"],
+      "time_grain": "daily",
+      "notes": "依赖 unit_cost 字段；用户上传缺失成本字段时降级为不可用。"
+    },
+    {
+      "name": "毛利率",
+      "calculation": "毛利额 / 销售额",
+      "unit": "%",
+      "aliases": ["gross margin", "GP%"],
+      "time_grain": "daily",
+      "notes": "依赖成本字段；超出常态区间时提示核查成本字段。"
+    },
+    {
+      "name": "库存周转",
+      "calculation": "需用户提供库存字段",
+      "unit": "次",
+      "aliases": ["inventory turnover"],
+      "time_grain": "weekly",
+      "notes": "P0 样例数据未覆盖库存字段，遇到库存类问题需降级说明。"
+    }
+  ],
+  "dimensions": [
+    {
+      "name": "日期",
+      "column_ref": "sales_orders.order_date",
+      "description": "订单日期，按 ISO 标准 YYYY-MM-DD",
+      "drill_path": ["日", "周", "月"]
+    },
+    {
+      "name": "门店",
+      "column_ref": "sales_orders.store_name",
+      "description": "零售门店名称",
+      "drill_path": ["区域", "城市", "门店"]
+    },
+    {
+      "name": "商品类目",
+      "column_ref": "sales_orders.category_l1",
+      "description": "一级商品类目",
+      "drill_path": ["一级类目", "二级类目", "SKU"]
+    },
+    {
+      "name": "渠道",
+      "column_ref": "sales_orders.channel",
+      "description": "销售渠道",
+      "drill_path": []
+    },
+    {
+      "name": "客户类型",
+      "column_ref": "sales_orders.customer_type",
+      "description": "新客 / 老客",
+      "drill_path": []
+    }
+  ],
+  "analysis_templates": [
+    {
+      "name": "周度经营回顾",
+      "trigger": "weekly",
+      "description": "每周对上周或最近一个完整自然周的零售经营做整体复盘。",
+      "required_metrics": ["销售额", "订单数", "客单价", "退款率"],
+      "default_dimensions": ["门店", "商品类目", "渠道", "客户类型"],
+      "analysis_steps": [
+        "先看最近一个完整自然周的销售额、订单数、客单价、退款率，与上一周和近 4 周均值对比",
+        "识别波动幅度最大的指标，并判断是销售额、订单数、客单价还是退款率主导变化",
+        "按门店下钻销售额和订单数，找出贡献变化最大的门店",
+        "按商品类目下钻销售额和退款率，找出销售集中度和退款异常的类目",
+        "按渠道下钻销售额和客单价，识别活动或促销信号",
+        "按新老客占比看客户结构变化",
+        "用 record_finding 记录关键发现，每条 finding 标注 trend / anomaly / recommendation 与置信度",
+        "调用 finish 结束分析；未在 8 轮内完成时输出已有发现"
+      ]
+    }
+  ],
+  "validation_rules": [
+    {
+      "name": "销售额非负",
+      "check": "销售额 >= 0",
+      "severity": "error",
+      "message": "销售额出现负值，请检查退款或冲销数据是否被重复扣减"
+    },
+    {
+      "name": "订单数非负",
+      "check": "订单数 >= 0",
+      "severity": "error",
+      "message": "订单数出现负值，数据异常"
+    },
+    {
+      "name": "客单价合理性",
+      "check": "abs(销售额 / 订单数 - 客单价) < 0.01",
+      "severity": "warning",
+      "message": "客单价与销售额 / 订单数不一致，可能存在订单状态过滤口径差异"
+    },
+    {
+      "name": "退款率上限",
+      "check": "退款率 <= 30%",
+      "severity": "warning",
+      "message": "退款率超过 30%，建议核查数据完整性或活动期退款"
+    },
+    {
+      "name": "关键字段缺失",
+      "check": "sales_orders 缺少 net_sales_amount 或 order_date",
+      "severity": "error",
+      "message": "关键字段缺失，无法完成核心销售分析，请用样例数据或补全字段"
+    }
+  ],
+  "report_preferences": {
+    "language": "zh-CN",
+    "tone": "professional",
+    "chart_style": "clean",
+    "anomaly_thresholds": {
+      "significant_pct": 10.0,
+      "critical_pct": 30.0
+    }
+  },
+  "history_context": {
+    "last_run_summary": "",
+    "baseline_values": {},
+    "ongoing_notes": []
+  }
+}

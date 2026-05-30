@@ -1,0 +1,31 @@
+# 构建上下文裁剪：只需 backend/ 与 frontend/ 源码，其余一律排除。
+.git
+.github
+# Python
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+# Node / 前端产物（容器内重新安装/构建）
+**/node_modules
+frontend/dist
+**/*.tsbuildinfo
+**/.vite
+# 运行数据与密钥
+data
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+# 私有内容与本地工具（绝不进镜像）
+产品方案
+需求验证
+草稿内容
+docs
+publish
+.claude
+# 杂项
+**/.DS_Store
