@@ -1,6 +1,7 @@
 # Data Insight Agent 架构契约
 
-> 状态：v0.3（2026-05-24，补充 P0 CSV / Excel 上传契约）
+> 状态：v0.7（2026-05-31，P1-1 API 分层与 P1-2 R2 Backend 已实现；继续校准 P1 待实现契约 / P1+ 与 P2 未来态边界）
+> 进度：P0 ✅；开源就绪版 Cut1-3 ✅（已对外开源，多架构 ghcr 镜像，一行启动 + 体验模式）；当前 **P1 平台基本可用**（R2 单模型配置 UI + R3 持久化/历史/数据源），推进见 `docs/P1平台版推进计划.md`
 > 前版：v0.1 基于单趟流水线，已被本版替代
 > 用途：开发期所有跨层 / 跨模块改动前必须先读本文件
 > 维护：任何契约变更必须更新本文件，CLAUDE.md「Vibe Coding 协作纪律」#3 依赖于此
@@ -13,7 +14,7 @@
 ┌──────────────────────────────────────────────────────────────┐
 │  确定性 Workflow 外壳（代码持有编排权）                         │
 │                                                              │
-│  调度触发 ──► 加载上下文 ──► ┌─────────────────┐ ──► 报告组装 ──► 推送 │
+│  任务确认 ──► 加载上下文 ──► ┌─────────────────┐ ──► 报告组装 ──► Web 预览/历史 │
 │                            │ 有界 Agentic    │                │
 │                            │ 分析循环        │                │
 │                            │ (模型持有控制权) │                │
@@ -24,14 +25,14 @@
 └──────────────────────────────────────────────────────────────┘
          │                    │                    │
          ▼                    ▼                    ▼
-  用户数据库/CSV        用户 AI API (BYOM)     用户 SMTP 邮箱
+ CSV/XLSX/P2数据库     用户 AI API (BYOM)     P2 SMTP/Webhook
 ```
 
 **核心设计原则**：
 
 | 原则 | 含义 |
 |------|------|
-| 外壳确定性 | 调度、连接、报告组装、推送——代码写死顺序，可预测、可追溯 |
+| 外壳确定性 | 上传/连接、任务确认、报告组装、历史写入——代码写死顺序，可预测、可追溯 |
 | 内核 agentic | 分析步骤中模型自主决定取数/下钻/停止——数据分析本质是探索性的 |
 | 有界 | 迭代上限 + Token 预算 + 时间上限 + 降级策略——无人值守场景下不能放飞 |
 | 工具集固定 | 5 个工具，不可扩展——有界任务空间不需要开放 skill 体系 |
@@ -39,7 +40,7 @@
 
 **与 v0.1 的关键差异**：
 
-v0.1 的 8 模块单趟流水线（TaskRunner 按序调用）被替代。分析步骤不是一条直线——"销售额掉了"需要逐层下钻找根因，下一步取决于上一步返回什么。这种数据依赖的分支需要 agentic 循环，所有数据分析竞品（Julius AI、Dot、ThoughtSpot）验证了这一点。
+v0.1 的 8 模块单趟流水线（固定编排器按序调用）被替代。分析步骤不是一条直线——"销售额掉了"需要逐层下钻找根因，下一步取决于上一步返回什么。这种数据依赖的分支需要 agentic 循环，所有数据分析竞品（Julius AI、Dot、ThoughtSpot）验证了这一点。
 
 ---
 
@@ -47,19 +48,15 @@ v0.1 的 8 模块单趟流水线（TaskRunner 按序调用）被替代。分析�
 
 承接对象：前端 React + Vite 应用。
 
-**模块清单**：
-- 数据源管理
-- 分析任务配置（对话式 + 结构化确认）
-- 报告预览
-- 定时推送管理
-- 历史报告
-- 模型 / SMTP 设置
-- **Context Pack 配置**（指标口径、维度、分析模板的增删改查）
+**模块清单（按启用阶段分层）**：
+- P0 已启用：CSV/XLSX 数据源上传、样例数据、分析任务配置（对话式 + 结构化确认）、报告预览、模型状态展示。
+- P1 启用：单模型配置 UI、报告历史、数据源查看。
+- P1+ / P2 启用：Context Pack Web 编辑、手动重跑、任务模板、数据库直连、定时通知投递、SMTP/Webhook 设置。
 
 **REST API 约定**：
 - 路径前缀 `/api/v1/`
-- 资源命名复数：`/datasources`、`/tasks`、`/reports`、`/settings`、`/context-pack`
-- 列表分页：`?page=1&size=20`
+- 现行端点以 §2.1 / §2.2 表格为准；长期资源名可向 `/datasources`、`/tasks`、`/reports`、`/settings`、`/context-packs` 收敛。
+- P1 历史列表分页使用 `?limit=&offset=`；其他分页风格等出现第二个列表页后再统一。
 - 错误响应统一：`{code: str, message: str, details?: object}`
 
 ### 2.1 P0 API Schema
@@ -90,6 +87,7 @@ P0 仅允许 `type="csv"` 和 `type="xlsx"`；`mysql/postgres` 保留给 P2。`.
 | `GET` | `/api/v1/uploads/{session_id}?sheet={sheet_name}` | 读取上传 session 的指定 sheet 预览 |
 | `POST` | `/api/v1/tasks/parse` | 将自然语言目标解析为 P0 结构化任务；未配置 LLM 时返回默认周度模板并附 warning |
 | `POST` | `/api/v1/reports/run` | 基于当前数据源与结构化任务生成当次可追溯报告 |
+| `GET` | `/api/v1/model-status` | 返回模型配置状态 `{status, model?, provider?}`；`status` 包含 `configured/not_configured/disabled`，不返回 `base_url` / `api_key` |
 
 **Dataset response metadata**
 
@@ -115,7 +113,7 @@ context_pack_version: str              # "1.0.0"
 - XLSX：读取第一个非空可见 sheet；多 sheet 时前端展示 sheet selector，用户切换后重新生成预览和 `SchemaSummary`。
 - XLSX 只解析普通二维表格，首行作为表头；公式单元格读取缓存值，缓存值缺失时提示用户用 Excel 打开并保存后重试。
 - P0 不解析图表、透视表、宏、隐藏表、合并单元格语义和复杂表头。
-- 上传文件统一落到 `./data/uploads/{session_id}/`，P0 保留 24 小时后由清理任务删除。
+- 上传文件统一落到 `./data/uploads/{session_id}/`，当前 session 索引保存在进程内存；自动清理策略不在 P1 实现，作为后续加固项处理。
 
 **P0 error codes**
 
@@ -142,6 +140,38 @@ context_pack_version: str              # "1.0.0"
 - P1/P2：任务状态机 `draft → confirmed → active → paused`
 - P2：数据库直连、定时任务首次启用、邮件首次发送须人工确认
 
+### 2.2 P1 API Schema（平台版）
+
+P1 在 P0 基础上启用 **单模型配置（R2）** 与 **报告历史 + 数据源查看（R3）**。仍不启用：定时推送、数据库直连、Context Pack 编辑、任务模板、手动重跑、多用户（保留给 P1+/P2）。
+
+**API 分层（P1-1 已实现）**：P0 路由已拆为 `backend/app/api/` 下按域划分的 APIRouter（`uploads` / `tasks` / `reports` / `llm_config`）；`runtime.py` 承接上传 session 与共享取表逻辑；`main.py` 仅做 app 装配、`/health` 和末尾前端静态产物挂载。路径/响应契约不变，仅组织方式调整。
+
+**R2 · 单模型配置（P1-2 Backend 已实现，P1-3 Frontend 已实现）**
+
+配置优先级：`data/llm_config.json`（UI 写入）> `.env` / 环境变量。`get_settings()` 若检测到启用中的有效 `llm_config.json` 则据其构造 `Settings`，否则回落 `.env`。若 UI config 显式 `enabled=false`，视为用户关闭模型，不回落 `.env`。配置文件含 `provider / api_key / base_url / model / enabled / updated_at`，文件权限 600。
+
+| Method | Path | 用途 |
+|---|---|---|
+| `GET` | `/api/v1/llm-config` | 回 `{provider, base_url, model, has_key, source:"ui"\|"env"\|"none", enabled}`，**不含 api_key** |
+| `POST` | `/api/v1/llm-config` | 保存配置到 `llm_config.json`（写后 chmod 600），回最新 model-status；未提交 `api_key` 且已有 UI key 时保留旧 key |
+| `POST` | `/api/v1/llm-config/test` | 用提交的配置做一次真实模型连通性测试，回 `{ok, error?}`（error 脱敏），**不落盘**；未提交 `api_key` 且已有 UI key 时可复用旧 key |
+| `DELETE` | `/api/v1/llm-config` | 删除 `llm_config.json`，回落 `.env` / 体验模式 |
+
+安全见 §4.1：api_key 永不出现在 GET 响应 / 日志 / 报告中。
+
+**R3 · 报告历史 + 数据源查看**
+
+`POST /api/v1/reports/run` 收尾后持久化：新数据集存 `datasets`、报告存 `reports`（schema 见 §5.1），返回体增加 `report_id`。历史**只读**，不支持手动重跑 / 编辑（保留给 P1+）。
+
+| Method | Path | 用途 |
+|---|---|---|
+| `GET` | `/api/v1/reports?limit=&offset=` | 历史报告列表（轻量：id / title / summary / status / ran_at / model / finding_count） |
+| `GET` | `/api/v1/reports/{report_id}` | 报告详情（完整 report payload + 结构化任务上下文 + 关联数据集概要） |
+| `GET` | `/api/v1/datasets?limit=&offset=` | 数据源列表（轻量：id / file_name / 行列数 / 状态 / 引用报告数） |
+| `GET` | `/api/v1/datasets/{dataset_id}` | 数据源详情（`SchemaSummary` + 预览），供"数据源查看" |
+
+"对话"语义：无自由聊天记录；前端历史详情的"对话流"（目标 → 解析 → 任务 → 报告）由存下的 task + goal + report + `analysis_steps` 只读重建。
+
 ---
 
 ## 3. 任务执行层 — 三阶段执行模型
@@ -149,7 +179,7 @@ context_pack_version: str              # "1.0.0"
 ### 3.0 总览
 
 ```
-TaskRunner
+Analysis Workflow
   │
   ├── Phase A: Pre-analysis（确定性）
   │     Schema Profiler ──► 加载 Context Pack ──► 初始化分析会话
@@ -161,7 +191,7 @@ TaskRunner
   │     └─────────────────────────────────────────────┘
   │
   └── Phase C: Post-analysis（确定性）
-        执行 validation_rules ──► 图表定稿 ──► Report Composer ──► 推送
+        Report Composer ──► Web payload ──► P1 历史持久化
 ```
 
 ### 3.1 Phase A — Pre-analysis（确定性）
@@ -173,13 +203,14 @@ TaskRunner
 - 副作用：只读访问数据源；不调用 LLM
 
 **加载 Context Pack**
-- 从 SQLite 读取当前部署的 Context Pack（schema 见 Section 6）
+- P0/P1 从内置只读 JSON artifact 读取默认 Context Pack（schema 见 Section 6）
+- SQLite `context_pack` 表与 Web 编辑保留给 P1+，不属于 P1 当前实现范围
 - 将 metrics/dimensions/templates 格式化为 LLM 可理解的系统上下文
 
 **初始化分析会话**
 - 构造系统 prompt = Schema 摘要 + Context Pack + 分析模板（如有匹配的 template）
 - 设置 ExecutionPolicy（bounds、timeouts）
-- 创建会话记录（用于可追溯性）
+- P0/P1 在当次运行内记录分析步骤；R3 引入 Report/Dataset 持久化后用于历史详情重建
 
 ### 3.2 Phase B — Analysis Loop（有界 agentic）
 
@@ -208,7 +239,7 @@ TaskRunner
 - 职责：从查询结果生成可视化
 - 输入：`{ data_ref: str, chart_type: "line"|"bar"|"pie"|"table", title: str, x_axis?: str, y_axis?: str }`
 - 输出：`{ chart_id: str, png_base64: str, echarts_spec: dict }`
-- 说明：双轨输出——Matplotlib PNG（邮件嵌入用）+ ECharts spec（Web 预览用）
+- 说明：P0/P1 以 ECharts spec 服务 Web 预览；`png_base64` 为空或预留给 P2 邮件嵌入
 
 **Tool 4: `record_finding`**
 - 职责：记录一条分析发现
@@ -226,7 +257,7 @@ TaskRunner
 
 | 约束 | 默认值 | 硬上限 | 说明 |
 |------|--------|--------|------|
-| 迭代轮次 | 8 | 15 | 每次工具调用算 1 轮 |
+| 分析步骤数 | 12 | 15 | 每次工具调用算 1 步；当前 `iterations_used` 实际表示步骤数 |
 | Token 消耗 | 50K | 100K | 含输入+输出，BYOM = 用户的钱 |
 | 执行时间 | 5 min | 10 min | 含所有 SQL 执行和 LLM 调用 |
 | 单次 SQL 超时 | 30s | 120s | Executor 层强制 |
@@ -271,25 +302,24 @@ P0 Analysis Loop 在 `analysis_steps[].code`（step.status=`failed`）或 `warni
 ### 3.3 Phase C — Post-analysis（确定性）
 
 **Validation Rules 执行**
-- 从 Context Pack 读取 `validation_rules[]`
-- 对 Analysis Loop 产出的 findings 和查询结果执行校验
-- severity=error 的违规标红并在报告中警告
-- 确定性执行，不由模型判断
+- P0/P1 已在 Context Pack 中保留 `validation_rules[]`，当前不新增独立阻断式规则引擎。
+- P1+ 若启用规则引擎，应对 Analysis Loop 产出的 findings 和查询结果做确定性校验，不由模型判断。
+- severity=error 的违规应标红并在报告中警告；是否阻断报告需要在对应阶段计划中单列确认。
 
 **图表定稿**
 - 收集循环中所有 `create_chart` 的产出
 - 统一样式、排版
-- 确保双轨输出完整（PNG + ECharts spec）
+- P0/P1 Web 使用 ECharts spec；`png_base64` 暂为空或预留，P2 邮件嵌入再启用 PNG 产物
 
 **Report Composer**
 - 输入：`{ task_meta, context_pack.report_preferences, findings[], charts[], validated_sql_trail[] }`
-- 输出：`Report { html, web_payload, metadata: {datasource, queries[], ran_at, model, iterations_used, token_used} }`
-- 每条结论关联：SQL 原文、数据源、运行时间、循环轮次
+- 输出：结构化 `ReportPayload` dict（Web payload），包含 `status/title/summary/kpis/findings/warnings/metadata/analysis_steps`
+- `metadata.iterations_used` 当前表示分析步骤数；后续如区分循环轮次与记录步骤，应另增字段，不复用旧名表达新含义
+- 每条结论关联：SQL 原文、数据源、运行时间、分析步骤序号
 
-**推送**
-- 根据任务配置：Email（SMTP）/ Webhook
-- HTML 邮件中图表以 base64 嵌入
-- Web 预览以 JSON payload 存储
+**P2 通知投递（未来态）**
+- 定时任务、Email（SMTP）/ Webhook、HTML 邮件和图表 PNG 嵌入均保留给 P2
+- P1 不启用通知投递；报告只做 Web 展示与历史持久化
 
 ---
 
@@ -306,6 +336,7 @@ P0 Analysis Loop 在 `analysis_steps[].code`（step.status=`failed`）或 `warni
 | 字段存在性 | 引用不存在字段 → 拒绝 | SQL Validator + SchemaSummary |
 | 敏感字段 | `is_sensitive=true` 的字段值不进 LLM | `query_data` 工具 + Context Pack |
 | 凭证安全 | API Key / SMTP 密码不入日志、不入报告 | 全局日志过滤 + 报告渲染过滤 |
+| UI 模型配置（P1/R2） | `data/llm_config.json` 文件权限 600；`enabled=false` 显式关闭模型且不回落 `.env`；api_key 不入 GET 响应 / 日志 / 报告，错误信息经 `sanitize_error` 脱敏 | `llm_config` API + 全局日志过滤 |
 
 #### P0.4 SQL Validator 策略
 
@@ -327,11 +358,11 @@ LIMIT 策略固定为：无 `WHERE` 且无 `LIMIT` 直接拒绝；有 `WHERE` �
 
 | 控制点 | 策略 | 配置位置 |
 |--------|------|---------|
-| 迭代上限 | 默认 8 轮，硬上限 15 轮 | `ExecutionPolicy.loop.max_iterations` |
+| 分析步骤上限 | 默认 12 步，硬上限 15 步 | `ExecutionPolicy.loop.max_iterations` |
 | Token 预算 | 默认 50K，硬上限 100K | `ExecutionPolicy.loop.max_tokens` |
 | 时间上限 | 默认 5 min，硬上限 10 min | `ExecutionPolicy.loop.max_duration` |
 | **每轮 SQL 校验** | 循环内每一轮 SQL 都过 Validator，不是只验一次 | SQL Validator |
-| 降级策略 | 触顶 → 输出已有发现 + 标注未完成 | TaskRunner 硬编码 |
+| 降级策略 | 触顶 → 输出已有发现 + 标注未完成 | Analysis Workflow 硬编码 |
 
 ### 4.4 业务流程约束
 
@@ -347,10 +378,10 @@ LIMIT 策略固定为：无 `WHERE` 且无 `LIMIT` 直接拒绝；有 `WHERE` �
 ## 5. 数据流总览
 
 ```
-[用户] ──配置任务──► [业务产品层] ──持久化──► SQLite
+[用户] ──配置/确认任务──► [业务产品层]
                           │
-              调度器触发   ▼
-                   ┌─── TaskRunner ───┐
+               手动运行   ▼
+                   ┌─── Analysis Workflow ───┐
                    │                  │
                    │  Phase A: Pre    │
                    │  Schema Profiler │
@@ -372,19 +403,62 @@ LIMIT 策略固定为：无 `WHERE` 且无 `LIMIT` 直接拒绝；有 `WHERE` �
                    │  Chart finalize  │
                    │  Report Compose  │
                    └───────┬──────────┘
+                           ▼
+                    Web 预览 JSON
                            │
-               ┌───────────┴───────────┐
-               ▼                       ▼
-          HTML 邮件                Web 预览 JSON
-               │                       │
-              SMTP              React + ECharts
+                    React + ECharts
+                           │
+                    P1/R3 写入 SQLite 历史
+
+P2 未来态：调度器触发后复用同一 Analysis Workflow，并把报告投递到 SMTP/Webhook。
 ```
+
+### 5.1 持久层数据模型（P1：R3 引入）
+
+P1 起在 `backend/app/db/`（SQLAlchemy 2.0 ORM，已为依赖）落地持久层；DB 由 `APP_DB_URL` 指定（默认 `sqlite:///./data/app.db`，落持久卷 `data/`）。启动时 `Base.metadata.create_all()` 建表（暂不引 Alembic）。报告生成后写两张表，报告 payload 整体以 JSON 列存储（`ReportPayload` 已是稳定结构化 dict，不拆多表）。
+
+```
+Dataset {
+  id: uuid (pk)
+  created_at: datetime
+  data_source_ref_json: json          # DataSourceRef
+  schema_summary_json: json           # SchemaSummary
+  preview_json: json                  # head / tail 预览
+  field_profile_json: json            # 字段识别结果
+  file_path: str                      # data/uploads/...（样例数据为内置）
+  file_name: str
+  row_count: int
+  column_count: int
+}
+
+Report {
+  id: uuid (pk)
+  created_at: datetime
+  dataset_id: uuid (fk → Dataset)
+  task_title: str
+  analysis_goal: str
+  structured_task_json: json           # StructuredTask，用于历史详情只读重建
+  metrics_json / dimensions_json: json
+  comparison: str
+  context_pack_name: str
+  context_pack_version: str
+  report_json: json                   # 完整 ReportPayload（§3.3 Report Composer 产出）
+  status: str                         # completed | partial | failed
+  summary: str
+  model_used: str
+  iterations_used: int
+  token_used: int
+  ran_at: datetime
+}
+```
+
+历史/数据源读取端点见 §2.2。预留（P1+，本期不实现）：`context_pack` 表（§6.1）、`history_context` 回写（§6.1）。
 
 ---
 
 ## 6. Context Pack Schema
 
-Context Pack = 行业/场景的结构化业务知识包。P0 使用内置只读 JSON artifact；P1 起单租户一个 pack，写入 SQLite `context_pack` 表并允许 Web 界面编辑。每次分析时注入 agentic 循环的系统 prompt。V1 默认提供 `Retail Operations` 作为首个示例 pack，但 schema 本身保持行业无关，未来可承载多个 vertical pack。
+Context Pack = 行业/场景的结构化业务知识包。P0 与当前 P1 使用内置只读 JSON artifact；P1/R3 引入的 SQLite 持久层只保存 Dataset/Report，不保存可编辑 Context Pack。写入 SQLite `context_pack` 表、允许 Web 编辑、维护 `history_context` 留给 P1+。每次分析时注入 agentic 循环的系统 prompt。V1 默认提供 `Retail Operations` 作为首个示例 pack，但 schema 本身保持行业无关，未来可承载多个 vertical pack。
 
 ### 6.1 完整 Schema
 
@@ -458,7 +532,7 @@ ContextPack {
     }
   }
 
-  history_context: {                    # 系统自动维护
+  history_context: {                    # P1+ 系统自动维护；P0/P1 JSON 中只读保留
     last_run_summary: str               # 上次分析的关键结论
     baseline_values: {str: float}       # 基线指标值，如 {"GMV": 125000.0}
     ongoing_notes: [str]                # 持续关注事项
@@ -472,8 +546,8 @@ ContextPack {
 |---------|------|
 | `metrics` + `dimensions` 是核心 | 对标 Dot DotML、ThoughtSpot 治理语义层——口径一致性是分析质量的基础 |
 | `analysis_templates` 引导但不强制 | 注入 prompt 后模型可偏离（如数据指向预期外方向）——保留探索性 |
-| `validation_rules` 确定性执行 | 不由模型判断，Post-analysis 阶段代码遍历执行——确保硬性校验不被跳过 |
-| `history_context` 系统自动维护 | 每次分析完成后写入 last_run_summary + 更新 baseline——支持趋势跟踪和环比 |
+| `validation_rules` P1+ 确定性执行 | P0/P1 只读保留规则定义；后续启用时由代码遍历执行，不由模型判断 |
+| `history_context` P1+ 系统自动维护 | 每次分析完成后写入 last_run_summary + 更新 baseline；P0/P1 只读保留，不回写 |
 | `is_sensitive` 联动执行控制层 | 标记为敏感的字段值不进 LLM，`query_data` 返回时自动 mask |
 | `Retail Operations` 只是首个示例 pack | 用于 V1 演示与需求验证，不把零售固化到 schema 和底层接口 |
 | V1 单 pack，JSON 存储 | 一个部署先跑通一个场景，多 pack 留给后续扩展（≥2 个垂直时再做加载机制） |
@@ -490,7 +564,7 @@ System Prompt 结构:
 4. 指标口径（来自 metrics，格式化为规则列表）
 5. 分析维度（来自 dimensions，含下钻路径）
 6. 分析引导（来自匹配的 analysis_template，如有）
-7. 历史上下文（来自 history_context）
+7. 历史上下文（P1+ 启用；P0/P1 只读注入已有 JSON 字段，不回写）
 8. 工具使用说明（5 个工具的调用方式）
 9. 报告风格要求（来自 report_preferences）
 ```
@@ -512,3 +586,5 @@ System Prompt 结构:
 | v0.1 | 2026-05-07 | 初稿：8 模块单趟流水线 |
 | v0.2 | 2026-05-17 | 重写：workflow 外壳 + 有界 agentic 分析内核 + Context Pack Schema |
 | v0.3 | 2026-05-24 | 补充 P0 CSV / XLSX 上传、sheet 选择、错误码和 `.env` 行为 |
+| v0.4 | 2026-05-31 | 补充 P1 平台版契约：单模型配置（§2.2 / §4.1）、持久层与报告历史（§2.2 / §5.1）、API 分层 |
+| v0.5 | 2026-05-31 | 校准当前实现与 P1/P1+/P2 边界：API 分层待实现、Context Pack JSON 来源、12 步分析上限、P1 历史持久化与 P2 通知投递拆分 |

@@ -1,10 +1,16 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def isolated_metadata_db(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("APP_DB_URL", f"sqlite:///{tmp_path / 'metadata.db'}")
 
 
 def test_sample_dataset_returns_preview_and_valid_profile():
@@ -212,7 +218,7 @@ def test_run_report_uses_analysis_loop_when_llm_is_configured(monkeypatch):
         def complete(self, messages):
             return json.dumps(self.responses.pop(0), ensure_ascii=False)
 
-    monkeypatch.setattr("app.main.get_llm_client", lambda _settings=None: FakeLLMClient())
+    monkeypatch.setattr("app.api.reports.get_llm_client", lambda _settings=None: FakeLLMClient())
     client = TestClient(app)
 
     response = client.post(

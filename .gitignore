@@ -1,5 +1,6 @@
 # OS
 .DS_Store
+.thumbnail
 
 # Environment
 .env
@@ -31,3 +32,6 @@ backend/.sample-data-qa.json
 # Editor
 .vscode/
 .idea/
+
+# Local tool locks
+.claude/scheduled_tasks.lock

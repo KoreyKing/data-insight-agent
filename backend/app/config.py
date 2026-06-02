@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_http_referer: str | None = None
     llm_app_title: str | None = None
+    app_db_url: str = "sqlite:///./data/app.db"
 
     @property
     def normalized_provider(self) -> str:
@@ -55,7 +56,30 @@ class Settings(BaseSettings):
 
 
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+
+    from app.llm.config_store import load_ui_config
+
+    ui_config = load_ui_config()
+    if ui_config is None:
+        return settings
+    if ui_config.get("enabled") is False:
+        return settings.model_copy(
+            update={
+                "llm_provider": ui_config["provider"],
+                "llm_api_key": None,
+                "llm_base_url": None,
+                "llm_model": None,
+            }
+        )
+    return settings.model_copy(
+        update={
+            "llm_provider": ui_config["provider"],
+            "llm_api_key": ui_config["api_key"],
+            "llm_base_url": ui_config["base_url"],
+            "llm_model": ui_config["model"],
+        }
+    )
 
 
 def normalize_optional_string(value: str | None) -> str | None:

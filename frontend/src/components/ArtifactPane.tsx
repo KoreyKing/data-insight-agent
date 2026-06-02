@@ -1,7 +1,8 @@
 import { useEffect, useState, type Dispatch } from 'react'
 import type { Action, AppState } from '../lib/state'
 import { taskView } from '../lib/state'
-import type { Finding, KPI, ReportPayload } from '../api/client'
+import type { DatasetPayload, Finding, HistoryDatasetDetail, KPI, ReportPayload, StructuredTask } from '../api/client'
+import { formatHistoryDate, historySummary } from '../lib/history'
 import {
   deriveRole,
   friendlyContextPack,
@@ -52,12 +53,18 @@ function ProfileStat({ label, value, sub }: { label: string; value: string; sub:
 function DatasetProfile({
   state,
   onSelectSheet,
+  datasetOverride,
+  readonly,
+  detail,
 }: {
   state: AppState
   onSelectSheet: (sheet: string) => void
+  datasetOverride?: DatasetPayload | null
+  readonly?: boolean
+  detail?: HistoryDatasetDetail | null
 }) {
   const [showRaw, setShowRaw] = useState(false)
-  const dataset = state.dataset
+  const dataset = datasetOverride ?? state.dataset
   if (!dataset) return null
 
   const columns = dataset.schema_summary.columns
@@ -115,7 +122,7 @@ function DatasetProfile({
         </div>
       </div>
 
-      {sheets.length > 1 && (
+      {!readonly && sheets.length > 1 && (
         <div className="sheet-row">
           {sheets.map((s) => (
             <button
@@ -222,6 +229,49 @@ function DatasetProfile({
         </div>
       </div>
 
+      {readonly && previewRows.length > 0 && (
+        <div className="preview ds-inline-preview">
+          <div className="preview-hd">
+            <div className="hstack">
+              <Ico.Table size={13} /> <b>数据预览</b>
+              <span style={{ color: 'var(--ink-3)' }}>
+                前 {Math.min(previewRows.length, 6)} 行 / 共 {dataset.row_count.toLocaleString('zh-CN')} 行
+              </span>
+            </div>
+          </div>
+          <div className="preview-body">
+            <table className="t">
+              <thead>
+                <tr>
+                  {columns.map((col) => (
+                    <th key={col.name}>
+                      {col.name}
+                      <span className="type">{col.data_type}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.slice(0, 6).map((row, i) => (
+                  <tr key={i}>
+                    {columns.map((col) => {
+                      const t = col.data_type.toLowerCase()
+                      const cls = t === 'number' ? 'num' : 'txt'
+                      const value = row[col.name]
+                      return (
+                        <td key={col.name} className={cls}>
+                          {value === null || value === undefined ? '' : String(value)}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {showRaw && (
         <div className="modal-backdrop" onClick={() => setShowRaw(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -266,6 +316,33 @@ function DatasetProfile({
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {detail && detail.reports.length > 0 && (
+        <div className="ds-card ds-report-refs">
+          <div className="ds-fields-hd">
+            <div className="hstack" style={{ gap: 8 }}>
+              <h4 style={{ margin: 0 }}>关联报告</h4>
+              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                {detail.reports.length} 份历史报告引用
+              </span>
+            </div>
+          </div>
+          <div className="ds-ref-list">
+            {detail.reports.slice(0, 6).map((report) => (
+              <div className="ds-ref-row" key={report.id}>
+                <div>
+                  <div className="ds-ref-title">{report.title}</div>
+                  <div className="ds-ref-summary">{historySummary(report.summary, 72)}</div>
+                </div>
+                <div className="ds-ref-meta">
+                  <span>{formatHistoryDate(report.ran_at)}</span>
+                  <span>{report.finding_count} 洞察</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -686,9 +763,20 @@ function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Disp
   )
 }
 
-function TaskReadOnly({ state }: { state: AppState }) {
-  if (!state.task) return null
-  const task = taskView(state.task, state.compare)
+function TaskReadOnly({
+  state,
+  taskOverride,
+  compareOverride,
+  userGoalOverride,
+}: {
+  state: AppState
+  taskOverride?: StructuredTask | null
+  compareOverride?: string
+  userGoalOverride?: string
+}) {
+  const sourceTask = taskOverride ?? state.task
+  if (!sourceTask) return null
+  const task = taskView(sourceTask, compareOverride ?? state.compare)
   const rowStyle = {
     display: 'grid',
     gridTemplateColumns: '90px 1fr',
@@ -749,7 +837,7 @@ function TaskReadOnly({ state }: { state: AppState }) {
             maxWidth: 560,
           }}
         >
-          {state.userGoal || state.task.analysis_goal}
+          {userGoalOverride || state.userGoal || sourceTask.analysis_goal}
         </div>
       </div>
     </div>
@@ -821,19 +909,39 @@ export default function ArtifactPane({
   onPickUpload,
 }: ArtifactPaneProps) {
   const tab = state.artifactTab
-  const report = state.report
+  const report = state.mode === 'history' ? state.historyReport : state.report
+  const dataset =
+    state.mode === 'history'
+      ? state.historyDataset
+      : state.mode === 'dataset'
+        ? state.datasetPreview
+        : state.dataset
+  const task = state.mode === 'history' ? state.historyTask : state.task
+  const userGoal = state.mode === 'history' ? state.historyUserGoal : state.userGoal
+  const progress = state.mode === 'history' ? state.historyProgress : state.progress
+  const readonly = state.mode !== 'current'
+  const effectiveStep =
+    state.mode === 'history'
+      ? report
+        ? 'report'
+        : 'empty'
+      : state.mode === 'dataset'
+        ? dataset
+          ? 'dataset'
+          : 'empty'
+        : state.step
   const [printPending, setPrintPending] = useState(false)
 
   // 导出 PDF（方案 A）：其它 tab 时报告内容未挂载，先切回报告 tab，等渲染后再触发浏览器打印。
   useEffect(() => {
     if (!printPending) return
-    if (state.step !== 'report' || tab !== 'report') return
+    if (effectiveStep !== 'report' || tab !== 'report') return
     const id = window.requestAnimationFrame(() => {
       window.print()
       setPrintPending(false)
     })
     return () => window.cancelAnimationFrame(id)
-  }, [printPending, tab, state.step])
+  }, [printPending, tab, effectiveStep])
 
   function handleExportPdf() {
     if (tab !== 'report') dispatch({ type: 'TAB', tab: 'report' })
@@ -843,26 +951,31 @@ export default function ArtifactPane({
   let title = '工作台'
   let crumbs: string[] = ['工作台']
   let icon = <Ico.Database />
-  const sourceName = state.dataset?.data_source_ref.name
-  if (state.dataset) {
+  const sourceName = dataset?.data_source_ref.name
+  if (dataset) {
     title = '数据集预览'
     crumbs = ['工作台', sourceName!]
     icon = <Ico.Database />
   }
-  if (state.step === 'task_ready') {
+  if (effectiveStep === 'task_ready') {
     title = '结构化任务'
     crumbs = ['工作台', sourceName!, '任务确认']
     icon = <Ico.Sparkle />
   }
-  if (state.step === 'generating') {
+  if (effectiveStep === 'generating') {
     title = '正在生成报告'
     crumbs = ['工作台', '生成中']
     icon = <Ico.Loop />
   }
-  if (state.step === 'report' && report) {
+  if (effectiveStep === 'report' && report) {
     title = report.title
-    crumbs = ['工作台', '报告']
+    crumbs = readonly ? ['历史报告', report.metadata.data_source.name ?? '报告'] : ['工作台', '报告']
     icon = <Ico.Doc />
+  }
+  if (state.mode === 'dataset') {
+    title = dataset?.data_source_ref.name ?? '数据源'
+    crumbs = ['数据源', dataset?.data_source_ref.name ?? '选择数据源']
+    icon = <Ico.Database />
   }
 
   return (
@@ -880,7 +993,8 @@ export default function ArtifactPane({
           </div>
         </div>
         <div className="tools">
-          {state.step === 'report' && (
+          {readonly && <span className="readonly-pill">只读</span>}
+          {effectiveStep === 'report' && report && (
             <>
               <button className="btn ghost sm" onClick={handleExportPdf} title="导出当前报告为 PDF">
                 <Ico.Download size={11} /> 导出 PDF
@@ -890,7 +1004,7 @@ export default function ArtifactPane({
         </div>
       </div>
 
-      {state.step === 'report' && report && (
+      {effectiveStep === 'report' && report && (
         <div className="art-tabs">
           <button
             className={`art-tab ${tab === 'report' ? 'active' : ''}`}
@@ -920,54 +1034,74 @@ export default function ArtifactPane({
       )}
 
       <div className="art-scroll">
-        {!state.dataset && (
+        {!dataset && (
           <div className="art-empty">
             <div className="art-empty-card">
               <div className="ic">
-                <Ico.Database size={26} />
+                {state.mode === 'history' ? <Ico.Doc size={26} /> : <Ico.Database size={26} />}
               </div>
-              <h3>等待数据接入</h3>
+              <h3>
+                {state.historyDetailLoading || state.datasetDetailLoading
+                  ? '正在读取详情'
+                  : readonly
+                    ? '选择一条记录'
+                    : '等待数据接入'}
+              </h3>
               <p>
-                从左侧上传 CSV / Excel，或一键载入 <b>零售样例</b>。<br />
-                选定后字段映射与样本预览会出现在这里。
+                {readonly
+                  ? '从中间列表选择历史报告或数据源，详情会在这里只读展示。'
+                  : '从左侧上传 CSV / Excel，或一键载入零售样例。选定后字段映射与样本预览会出现在这里。'}
               </p>
-              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14 }}>
-                <button className="btn primary sm" onClick={onPickSample} disabled={Boolean(state.busy)}>
-                  <Ico.Sample size={11} /> 使用零售样例
-                </button>
-                <button className="btn ghost sm" onClick={onPickUpload} disabled={Boolean(state.busy)}>
-                  <Ico.Upload size={11} /> 上传文件
-                </button>
-              </div>
+              {!readonly && (
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14 }}>
+                  <button className="btn primary sm" onClick={onPickSample} disabled={Boolean(state.busy)}>
+                    <Ico.Sample size={11} /> 使用零售样例
+                  </button>
+                  <button className="btn ghost sm" onClick={onPickUpload} disabled={Boolean(state.busy)}>
+                    <Ico.Upload size={11} /> 上传文件
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {state.dataset &&
-          (state.step === 'dataset' || state.step === 'parsing' || state.step === 'task_ready') && (
-            <DatasetProfile state={state} onSelectSheet={onSelectSheet} />
+        {dataset &&
+          (effectiveStep === 'dataset' || effectiveStep === 'parsing' || effectiveStep === 'task_ready') && (
+            <DatasetProfile
+              state={state}
+              onSelectSheet={onSelectSheet}
+              datasetOverride={dataset}
+              readonly={readonly}
+              detail={state.mode === 'dataset' ? state.datasetDetail : null}
+            />
           )}
 
-        {state.step === 'generating' && <GenerationView state={state} />}
+        {effectiveStep === 'generating' && <GenerationView state={{ ...state, progress }} />}
 
-        {state.step === 'report' && report && tab === 'report' && (
+        {effectiveStep === 'report' && report && tab === 'report' && (
           <ReportDoc report={report} dispatch={dispatch} />
         )}
-        {state.step === 'report' && report && tab === 'dataset' && (
-          <DatasetProfile state={state} onSelectSheet={onSelectSheet} />
+        {effectiveStep === 'report' && report && tab === 'dataset' && (
+          <DatasetProfile
+            state={state}
+            onSelectSheet={onSelectSheet}
+            datasetOverride={dataset}
+            readonly={readonly}
+          />
         )}
-        {state.step === 'report' && report && tab === 'task' && (
+        {effectiveStep === 'report' && report && tab === 'task' && (
           <div style={{ padding: '28px 32px', maxWidth: 720 }}>
             <div className="rep-tagrow">
               <span className="d" /> 任务定义
             </div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 500, margin: '4px 0 16px' }}>
-              {state.task?.task_title}
+              {task?.task_title}
             </h2>
-            <TaskReadOnly state={state} />
+            <TaskReadOnly state={state} taskOverride={task} userGoalOverride={userGoal} />
           </div>
         )}
-        {state.step === 'report' && report && tab === 'trace' && <TraceView report={report} />}
+        {effectiveStep === 'report' && report && tab === 'trace' && <TraceView report={report} />}
       </div>
     </section>
   )

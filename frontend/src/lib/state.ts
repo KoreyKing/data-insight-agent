@@ -4,6 +4,10 @@ import type {
   ApiWarning,
   DatasetPayload,
   DimensionOption,
+  HistoryDatasetDetail,
+  HistoryDatasetListItem,
+  HistoryReportDetail,
+  HistoryReportListItem,
   ReportPayload,
   StructuredTask,
 } from '../api/client'
@@ -11,6 +15,8 @@ import type {
 export type Step = 'empty' | 'dataset' | 'parsing' | 'task_ready' | 'generating' | 'report'
 
 export type ArtifactTab = 'report' | 'dataset' | 'task' | 'trace'
+
+export type AppMode = 'current' | 'history' | 'dataset'
 
 export type ProgressStep = {
   state: 'pending' | 'active' | 'done'
@@ -20,6 +26,7 @@ export type ProgressStep = {
 }
 
 export type AppState = {
+  mode: AppMode
   step: Step
   dataset: DatasetPayload | null
   userGoal: string
@@ -38,9 +45,30 @@ export type AppState = {
   busy: string | null
   chartErrors: string[]
   genWaiting: boolean
+  historyReports: HistoryReportListItem[]
+  historyTotal: number
+  historyLoading: boolean
+  historyError: ApiError | null
+  selectedHistoryId: string | null
+  historyDetailLoading: boolean
+  historyDetail: HistoryReportDetail | null
+  historyDataset: DatasetPayload | null
+  historyTask: StructuredTask | null
+  historyReport: ReportPayload | null
+  historyProgress: ProgressStep[]
+  historyUserGoal: string
+  datasets: HistoryDatasetListItem[]
+  datasetsTotal: number
+  datasetsLoading: boolean
+  datasetsError: ApiError | null
+  selectedDatasetId: string | null
+  datasetDetailLoading: boolean
+  datasetDetail: HistoryDatasetDetail | null
+  datasetPreview: DatasetPayload | null
 }
 
 export const INITIAL: AppState = {
+  mode: 'current',
   step: 'empty',
   dataset: null,
   userGoal: '',
@@ -59,10 +87,33 @@ export const INITIAL: AppState = {
   busy: null,
   chartErrors: [],
   genWaiting: false,
+  historyReports: [],
+  historyTotal: 0,
+  historyLoading: false,
+  historyError: null,
+  selectedHistoryId: null,
+  historyDetailLoading: false,
+  historyDetail: null,
+  historyDataset: null,
+  historyTask: null,
+  historyReport: null,
+  historyProgress: [],
+  historyUserGoal: '',
+  datasets: [],
+  datasetsTotal: 0,
+  datasetsLoading: false,
+  datasetsError: null,
+  selectedDatasetId: null,
+  datasetDetailLoading: false,
+  datasetDetail: null,
+  datasetPreview: null,
 }
 
 export type Action =
   | { type: 'RESET' }
+  | { type: 'NAV_CURRENT' }
+  | { type: 'NAV_HISTORY' }
+  | { type: 'NAV_DATASETS' }
   | { type: 'SET_BUSY'; busy: string | null }
   | { type: 'SET_ERROR'; error: ApiError | null }
   | { type: 'DATASET_LOADED'; dataset: DatasetPayload }
@@ -86,11 +137,74 @@ export type Action =
   | { type: 'REPORT_DONE'; report: ReportPayload; progress: ProgressStep[] }
   | { type: 'TAB'; tab: ArtifactTab }
   | { type: 'CHART_ERROR'; title: string }
+  | { type: 'HISTORY_LIST_LOADING' }
+  | {
+      type: 'HISTORY_LIST_LOADED'
+      reports: HistoryReportListItem[]
+      total: number
+    }
+  | { type: 'HISTORY_LIST_ERROR'; error: ApiError }
+  | { type: 'DATASETS_LIST_LOADING' }
+  | {
+      type: 'DATASETS_LIST_LOADED'
+      datasets: HistoryDatasetListItem[]
+      total: number
+    }
+  | { type: 'DATASETS_LIST_ERROR'; error: ApiError }
+  | { type: 'HISTORY_DETAIL_LOADING'; reportId: string }
+  | {
+      type: 'HISTORY_DETAIL_LOADED'
+      detail: HistoryReportDetail
+      dataset: DatasetPayload
+      task: StructuredTask
+      report: ReportPayload
+      progress: ProgressStep[]
+      userGoal: string
+    }
+  | { type: 'HISTORY_DETAIL_ERROR'; error: ApiError }
+  | { type: 'DATASET_DETAIL_LOADING'; datasetId: string }
+  | {
+      type: 'DATASET_DETAIL_LOADED'
+      detail: HistoryDatasetDetail
+      dataset: DatasetPayload
+    }
+  | { type: 'DATASET_DETAIL_ERROR'; error: ApiError }
+
+function preservedLibrary(state: AppState): Partial<AppState> {
+  return {
+    historyReports: state.historyReports,
+    historyTotal: state.historyTotal,
+    historyLoading: state.historyLoading,
+    historyError: state.historyError,
+    selectedHistoryId: state.selectedHistoryId,
+    historyDetailLoading: state.historyDetailLoading,
+    historyDetail: state.historyDetail,
+    historyDataset: state.historyDataset,
+    historyTask: state.historyTask,
+    historyReport: state.historyReport,
+    historyProgress: state.historyProgress,
+    historyUserGoal: state.historyUserGoal,
+    datasets: state.datasets,
+    datasetsTotal: state.datasetsTotal,
+    datasetsLoading: state.datasetsLoading,
+    datasetsError: state.datasetsError,
+    selectedDatasetId: state.selectedDatasetId,
+    datasetDetailLoading: state.datasetDetailLoading,
+    datasetDetail: state.datasetDetail,
+    datasetPreview: state.datasetPreview,
+  }
+}
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'RESET':
-      return { ...INITIAL }
+      return { ...INITIAL, ...preservedLibrary(state), mode: 'current' }
+    case 'NAV_CURRENT':
+      return { ...state, mode: 'current', busy: null, error: null }
+    case 'NAV_HISTORY':
+      return { ...state, mode: 'history', busy: null, error: null }
+    case 'NAV_DATASETS':
+      return { ...state, mode: 'dataset', busy: null, error: null }
     case 'SET_BUSY':
       return { ...state, busy: action.busy }
     case 'SET_ERROR':
@@ -98,6 +212,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'DATASET_LOADED':
       return {
         ...state,
+        mode: 'current',
         step: 'dataset',
         dataset: action.dataset,
         task: null,
@@ -108,10 +223,12 @@ export function reducer(state: AppState, action: Action): AppState {
         error: null,
         busy: null,
         chartErrors: [],
+        artifactTab: 'dataset',
       }
     case 'SUBMIT_GOAL':
       return {
         ...state,
+        mode: 'current',
         userGoal: action.goal,
         step: 'parsing',
         parsing: [],
@@ -157,6 +274,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'RUN_REPORT':
       return {
         ...state,
+        mode: 'current',
         step: 'generating',
         progress: [],
         iter: 0,
@@ -189,6 +307,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'REPORT_DONE':
       return {
         ...state,
+        mode: 'current',
         step: 'report',
         report: action.report,
         progress: action.progress,
@@ -201,6 +320,90 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'CHART_ERROR':
       if (state.chartErrors.includes(action.title)) return state
       return { ...state, chartErrors: [...state.chartErrors, action.title] }
+    case 'HISTORY_LIST_LOADING':
+      return { ...state, historyLoading: true, historyError: null }
+    case 'HISTORY_LIST_LOADED':
+      return {
+        ...state,
+        historyReports: action.reports,
+        historyTotal: action.total,
+        historyLoading: false,
+        historyError: null,
+      }
+    case 'HISTORY_LIST_ERROR':
+      return { ...state, historyLoading: false, historyError: action.error }
+    case 'DATASETS_LIST_LOADING':
+      return { ...state, datasetsLoading: true, datasetsError: null }
+    case 'DATASETS_LIST_LOADED':
+      return {
+        ...state,
+        datasets: action.datasets,
+        datasetsTotal: action.total,
+        datasetsLoading: false,
+        datasetsError: null,
+      }
+    case 'DATASETS_LIST_ERROR':
+      return { ...state, datasetsLoading: false, datasetsError: action.error }
+    case 'HISTORY_DETAIL_LOADING':
+      return {
+        ...state,
+        mode: 'history',
+        selectedHistoryId: action.reportId,
+        historyDetailLoading: true,
+        historyError: null,
+        error: null,
+        artifactTab: 'report',
+      }
+    case 'HISTORY_DETAIL_LOADED':
+      return {
+        ...state,
+        mode: 'history',
+        selectedHistoryId: action.detail.id,
+        historyDetailLoading: false,
+        historyDetail: action.detail,
+        historyDataset: action.dataset,
+        historyTask: action.task,
+        historyReport: action.report,
+        historyProgress: action.progress,
+        historyUserGoal: action.userGoal,
+        historyError: null,
+        artifactTab: 'report',
+      }
+    case 'HISTORY_DETAIL_ERROR':
+      return {
+        ...state,
+        historyDetailLoading: false,
+        historyError: action.error,
+        error: action.error,
+      }
+    case 'DATASET_DETAIL_LOADING':
+      return {
+        ...state,
+        mode: 'dataset',
+        selectedDatasetId: action.datasetId,
+        datasetDetailLoading: true,
+        datasetsError: null,
+        error: null,
+        artifactTab: 'dataset',
+      }
+    case 'DATASET_DETAIL_LOADED':
+      return {
+        ...state,
+        mode: 'dataset',
+        selectedDatasetId: action.detail.id,
+        datasetDetailLoading: false,
+        datasetDetail: action.detail,
+        datasetPreview: action.dataset,
+        datasetsError: null,
+        artifactTab: 'dataset',
+      }
+    case 'DATASET_DETAIL_ERROR':
+      return {
+        ...state,
+        datasetDetailLoading: false,
+        datasetsError: action.error,
+        error: action.error,
+      }
     default:
       return state
   }

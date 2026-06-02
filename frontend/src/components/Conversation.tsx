@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'reac
 import type { Action, AppState } from '../lib/state'
 import { taskView } from '../lib/state'
 import { defaultGoal, type DimensionOption, type ModelStatus } from '../api/client'
+import { formatHistoryDate, historySummary, statusLabel } from '../lib/history'
 import { friendlyContextPack } from '../lib/view'
 import { Ico } from './icons'
 
@@ -240,6 +241,151 @@ function TaskCard({
   )
 }
 
+function LibraryHeader({
+  icon,
+  title,
+  count,
+  note,
+}: {
+  icon: ReactNode
+  title: string
+  count: number
+  note: string
+}) {
+  return (
+    <div className="library-hd">
+      <div className="library-ic">{icon}</div>
+      <div>
+        <div className="library-eyebrow">READ ONLY</div>
+        <h2>{title}</h2>
+        <p>{note}</p>
+      </div>
+      <span className="library-count">{count}</span>
+    </div>
+  )
+}
+
+function HistoryLibrary({
+  state,
+  onOpenHistory,
+}: {
+  state: AppState
+  onOpenHistory: (reportId: string) => void
+}) {
+  return (
+    <section className="conv library-panel">
+      <LibraryHeader
+        icon={<Ico.Doc size={16} />}
+        title="历史报告"
+        count={state.historyTotal}
+        note="点击任一报告，在右侧以只读方式查看报告正文、任务定义、SQL 依据与关联数据源。"
+      />
+      <div className="library-scroll">
+        {state.historyLoading && <div className="library-empty">正在读取历史报告…</div>}
+        {state.historyError && (
+          <div className="library-empty error">
+            <Ico.Warn size={14} /> {state.historyError.message}
+          </div>
+        )}
+        {!state.historyLoading && !state.historyError && state.historyReports.length === 0 && (
+          <div className="library-empty">
+            <Ico.Doc size={20} />
+            <span>暂无历史报告</span>
+            <p>生成第一份报告后，这里会出现可回看的只读记录。</p>
+          </div>
+        )}
+        {!state.historyLoading &&
+          state.historyReports.map((report) => (
+            <button
+              key={report.id}
+              className={`library-row ${state.selectedHistoryId === report.id ? 'active' : ''}`}
+              onClick={() => onOpenHistory(report.id)}
+            >
+              <div className="library-row-main">
+                <div className="library-row-title">{report.title}</div>
+                <p>{historySummary(report.summary, 92)}</p>
+              </div>
+              <div className="library-row-meta">
+                <span>
+                  <Ico.Clock size={11} /> {formatHistoryDate(report.ran_at)}
+                </span>
+                <span>
+                  <Ico.Database size={11} /> {report.dataset.file_name}
+                </span>
+                <span>{statusLabel(report.status)}</span>
+              </div>
+              <div className="library-row-stats">
+                <span>{report.finding_count} 洞察</span>
+                <span>{report.anomaly_count} 异常</span>
+                <span>{report.iterations_used} 步</span>
+              </div>
+            </button>
+          ))}
+      </div>
+    </section>
+  )
+}
+
+function DatasetLibrary({
+  state,
+  onOpenDataset,
+}: {
+  state: AppState
+  onOpenDataset: (datasetId: string) => void
+}) {
+  return (
+    <section className="conv library-panel">
+      <LibraryHeader
+        icon={<Ico.Database size={16} />}
+        title="数据源"
+        count={state.datasetsTotal}
+        note="查看已写入历史的数据源结构、字段映射、样本预览，以及关联报告引用。"
+      />
+      <div className="library-scroll">
+        {state.datasetsLoading && <div className="library-empty">正在读取数据源…</div>}
+        {state.datasetsError && (
+          <div className="library-empty error">
+            <Ico.Warn size={14} /> {state.datasetsError.message}
+          </div>
+        )}
+        {!state.datasetsLoading && !state.datasetsError && state.datasets.length === 0 && (
+          <div className="library-empty">
+            <Ico.Database size={20} />
+            <span>暂无数据源</span>
+            <p>每次成功生成报告后，系统会保存一份对应的数据源快照。</p>
+          </div>
+        )}
+        {!state.datasetsLoading &&
+          state.datasets.map((dataset) => (
+            <button
+              key={dataset.id}
+              className={`library-row dataset ${state.selectedDatasetId === dataset.id ? 'active' : ''}`}
+              onClick={() => onOpenDataset(dataset.id)}
+            >
+              <div className="library-row-main">
+                <div className="library-row-title">{dataset.file_name}</div>
+                <p>
+                  {dataset.row_count.toLocaleString('zh-CN')} 行 · {dataset.column_count} 列 ·{' '}
+                  {dataset.data_source_type.toUpperCase() || 'TABLE'}
+                </p>
+              </div>
+              <div className="library-row-meta">
+                <span>
+                  <Ico.Clock size={11} /> {formatHistoryDate(dataset.created_at)}
+                </span>
+                <span>{statusLabel(dataset.status)}</span>
+                <span>{dataset.report_count} 份报告</span>
+              </div>
+              <div className="library-row-stats">
+                <span>最近报告 {formatHistoryDate(dataset.latest_report_at)}</span>
+              </div>
+            </button>
+          ))}
+      </div>
+    </section>
+  )
+}
+
 type ConversationProps = {
   state: AppState
   dispatch: Dispatch<Action>
@@ -249,6 +395,8 @@ type ConversationProps = {
   onSubmitGoal: (goal: string) => void
   onRun: () => void
   onStop: () => void
+  onOpenHistory: (reportId: string) => void
+  onOpenDataset: (datasetId: string) => void
 }
 
 export default function Conversation({
@@ -260,6 +408,8 @@ export default function Conversation({
   onSubmitGoal,
   onRun,
   onStop,
+  onOpenHistory,
+  onOpenDataset,
 }: ConversationProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [composer, setComposer] = useState(defaultGoal)
@@ -276,6 +426,14 @@ export default function Conversation({
 
   const dataset = state.dataset
   const sourceName = dataset?.data_source_ref.name ?? ''
+
+  if (state.mode === 'history') {
+    return <HistoryLibrary state={state} onOpenHistory={onOpenHistory} />
+  }
+
+  if (state.mode === 'dataset') {
+    return <DatasetLibrary state={state} onOpenDataset={onOpenDataset} />
+  }
 
   function submit() {
     if (!dataset) {

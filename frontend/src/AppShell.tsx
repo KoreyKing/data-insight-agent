@@ -1,9 +1,13 @@
 // Top-level orchestrator: three-column shell + state machine wired to real backend API.
 // Generation uses simulated progress animation backfilled with real analysis_steps.
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   asApiError,
+  fetchDataset,
+  fetchDatasets,
   fetchModelStatus,
+  fetchReportDetail,
+  fetchReports,
   loadSample,
   parseTask,
   runReport,
@@ -15,8 +19,10 @@ import {
 import Sidebar from './components/Sidebar'
 import Conversation from './components/Conversation'
 import ArtifactPane from './components/ArtifactPane'
+import ModelConfigDialog from './components/ModelConfigDialog'
 import { Ico } from './components/icons'
 import { INITIAL, reducer, type ProgressStep } from './lib/state'
+import { datasetDetailToPayload, reportDetailToView } from './lib/history'
 
 // Simulated parse steps shown while POST /tasks/parse is in flight.
 const PARSE_STEPS = ['理解分析目标', '匹配分析场景与指标定义', '识别维度与对比方式', '生成结构化任务']
@@ -61,6 +67,7 @@ function stepsFromAnalysis(steps: AnalysisStep[] | undefined): ProgressStep[] {
 export default function AppShell() {
   const [state, dispatch] = useReducer(reducer, INITIAL)
   const [model, setModel] = useState<ModelStatus | null>(null)
+  const [modelConfigOpen, setModelConfigOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const timersRef = useRef<number[]>([])
   const abortRef = useRef<AbortController | null>(null)
@@ -70,23 +77,51 @@ export default function AppShell() {
     timersRef.current = []
   }
 
-  useEffect(() => {
+  const refreshModelStatus = useCallback(async (retries = 2): Promise<void> => {
     // Retry model-status a couple times before giving up — a transient fetch failure
     // must not be reported as "not configured" (which would be misleading).
-    const loadModel = async (retries = 2): Promise<void> => {
+    let remaining = retries
+    while (true) {
       try {
         setModel(await fetchModelStatus())
+        return
       } catch {
-        if (retries > 0) {
-          await new Promise((r) => window.setTimeout(r, 800))
-          return loadModel(retries - 1)
+        if (remaining <= 0) {
+          setModel({ status: 'unknown' })
+          return
         }
-        setModel({ status: 'unknown' })
+        remaining -= 1
+        await new Promise((r) => window.setTimeout(r, 800))
       }
     }
-    void loadModel()
-    return clearTimers
   }, [])
+
+  const refreshReports = useCallback(async (): Promise<void> => {
+    dispatch({ type: 'HISTORY_LIST_LOADING' })
+    try {
+      const res = await fetchReports()
+      dispatch({ type: 'HISTORY_LIST_LOADED', reports: res.items, total: res.total })
+    } catch (err) {
+      dispatch({ type: 'HISTORY_LIST_ERROR', error: asApiError(err) })
+    }
+  }, [])
+
+  const refreshDatasets = useCallback(async (): Promise<void> => {
+    dispatch({ type: 'DATASETS_LIST_LOADING' })
+    try {
+      const res = await fetchDatasets()
+      dispatch({ type: 'DATASETS_LIST_LOADED', datasets: res.items, total: res.total })
+    } catch (err) {
+      dispatch({ type: 'DATASETS_LIST_ERROR', error: asApiError(err) })
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshModelStatus()
+    void refreshReports()
+    void refreshDatasets()
+    return clearTimers
+  }, [refreshModelStatus, refreshReports, refreshDatasets])
 
   async function onPickSample() {
     clearTimers()
@@ -224,6 +259,8 @@ export default function AppShell() {
       clearTimers()
       const progress = stepsFromAnalysis(res.report.analysis_steps)
       dispatch({ type: 'REPORT_DONE', report: res.report, progress })
+      void refreshReports()
+      void refreshDatasets()
     } catch (err) {
       clearTimers()
       // User-initiated abort is handled by onStop; don't surface it as an error.
@@ -246,6 +283,56 @@ export default function AppShell() {
     dispatch({ type: 'RESET' })
   }
 
+  function onSelectCurrent() {
+    dispatch({ type: 'NAV_CURRENT' })
+  }
+
+  function onSelectHistory() {
+    dispatch({ type: 'NAV_HISTORY' })
+    if (state.historyReports.length === 0 && !state.historyLoading) void refreshReports()
+  }
+
+  function onSelectDatasets() {
+    dispatch({ type: 'NAV_DATASETS' })
+    if (state.datasets.length === 0 && !state.datasetsLoading) void refreshDatasets()
+  }
+
+  async function onOpenHistory(reportId: string) {
+    clearTimers()
+    dispatch({ type: 'HISTORY_DETAIL_LOADING', reportId })
+    try {
+      const detail = await fetchReportDetail(reportId)
+      const datasetDetail = await fetchDataset(detail.dataset_id)
+      const view = reportDetailToView(detail, datasetDetail)
+      dispatch({
+        type: 'HISTORY_DETAIL_LOADED',
+        detail,
+        dataset: view.dataset,
+        task: view.task,
+        report: view.report,
+        progress: stepsFromAnalysis(view.report.analysis_steps),
+        userGoal: view.userGoal,
+      })
+    } catch (err) {
+      dispatch({ type: 'HISTORY_DETAIL_ERROR', error: asApiError(err) })
+    }
+  }
+
+  async function onOpenDataset(datasetId: string) {
+    clearTimers()
+    dispatch({ type: 'DATASET_DETAIL_LOADING', datasetId })
+    try {
+      const detail = await fetchDataset(datasetId)
+      dispatch({
+        type: 'DATASET_DETAIL_LOADED',
+        detail,
+        dataset: datasetDetailToPayload(detail),
+      })
+    } catch (err) {
+      dispatch({ type: 'DATASET_DETAIL_ERROR', error: asApiError(err) })
+    }
+  }
+
   return (
     <div className="app" data-tone="forest">
       <input
@@ -255,7 +342,23 @@ export default function AppShell() {
         style={{ display: 'none' }}
         onChange={onFileChange}
       />
-      <Sidebar model={model} onNewSession={onNewSession} hasSession={Boolean(state.dataset)} />
+      <Sidebar
+        model={model}
+        onNewSession={onNewSession}
+        onSelectCurrent={onSelectCurrent}
+        onSelectHistory={onSelectHistory}
+        onSelectDatasets={onSelectDatasets}
+        onOpenHistory={onOpenHistory}
+        hasSession={Boolean(state.dataset)}
+        activeMode={state.mode}
+        historyReports={state.historyReports}
+        historyTotal={state.historyTotal}
+        historyLoading={state.historyLoading}
+        selectedHistoryId={state.selectedHistoryId}
+        datasetsTotal={state.datasetsTotal}
+        datasetsLoading={state.datasetsLoading}
+        onOpenModelConfig={() => setModelConfigOpen(true)}
+      />
       <Conversation
         state={state}
         dispatch={dispatch}
@@ -265,6 +368,8 @@ export default function AppShell() {
         onSubmitGoal={onSubmitGoal}
         onRun={onRun}
         onStop={onStop}
+        onOpenHistory={onOpenHistory}
+        onOpenDataset={onOpenDataset}
       />
       <ArtifactPane
         state={state}
@@ -284,6 +389,11 @@ export default function AppShell() {
           </button>
         </div>
       )}
+      <ModelConfigDialog
+        open={modelConfigOpen}
+        onClose={() => setModelConfigOpen(false)}
+        onSaved={() => refreshModelStatus(0)}
+      />
     </div>
   )
 }

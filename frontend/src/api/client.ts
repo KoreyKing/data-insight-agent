@@ -144,10 +144,100 @@ export type ReportPayload = {
   context_pack_version?: string
 }
 
+export type PaginatedResponse<T> = {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type HistoryDatasetSummary = {
+  id: string
+  file_name: string
+  row_count: number
+  column_count: number
+}
+
+export type HistoryReportListItem = {
+  id: string
+  dataset_id: string
+  title: string
+  summary: string
+  status: string
+  ran_at: string | null
+  created_at: string | null
+  model: string
+  iterations_used: number
+  token_used: number
+  finding_count: number
+  anomaly_count: number
+  dataset: HistoryDatasetSummary
+}
+
+export type HistoryReportDetail = HistoryReportListItem & {
+  report: ReportPayload
+  task: StructuredTask
+  dataset: HistoryDatasetSummary
+}
+
+export type DatasetReportRef = {
+  id: string
+  title: string
+  summary: string
+  status: string
+  ran_at: string | null
+  created_at: string | null
+  model: string
+  finding_count: number
+  anomaly_count: number
+}
+
+export type HistoryDatasetListItem = {
+  id: string
+  file_name: string
+  data_source_type: string
+  row_count: number
+  column_count: number
+  created_at: string | null
+  status: string
+  report_count: number
+  latest_report_at: string | null
+}
+
+export type HistoryDatasetDetail = HistoryDatasetListItem & {
+  data_source_ref: DataSourceRef
+  schema_summary: DatasetPayload['schema_summary']
+  preview: DatasetPayload['preview']
+  field_profile: FieldProfile
+  reports: DatasetReportRef[]
+}
+
 export type ModelStatus = {
-  status: 'configured' | 'not_configured' | 'failed' | 'unknown'
+  status: 'configured' | 'not_configured' | 'disabled' | 'failed' | 'unknown'
   model?: string
   provider?: string
+}
+
+export type LlmConfig = {
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  has_key: boolean
+  source: 'ui' | 'env' | 'none'
+  enabled: boolean
+}
+
+export type SaveLlmConfigPayload = {
+  provider: string
+  model: string
+  enabled: boolean
+  api_key?: string
+  base_url?: string
+}
+
+export type TestLlmConnectionResponse = {
+  ok: boolean
+  error?: string
 }
 
 export type ApiError = {
@@ -241,7 +331,7 @@ export function runReport(
   dataSourceRef: DataSourceRef,
   task: StructuredTask | null,
   signal?: AbortSignal,
-): Promise<{ report: ReportPayload }> {
+): Promise<{ report_id?: string; report: ReportPayload }> {
   return requestJson('/api/v1/reports/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -250,6 +340,54 @@ export function runReport(
   })
 }
 
+export function fetchReports(
+  limit = 20,
+  offset = 0,
+): Promise<PaginatedResponse<HistoryReportListItem>> {
+  return requestJson(`/api/v1/reports?limit=${limit}&offset=${offset}`)
+}
+
+export function fetchReportDetail(reportId: string): Promise<HistoryReportDetail> {
+  return requestJson(`/api/v1/reports/${encodeURIComponent(reportId)}`)
+}
+
+export function fetchDatasets(
+  limit = 20,
+  offset = 0,
+): Promise<PaginatedResponse<HistoryDatasetListItem>> {
+  return requestJson(`/api/v1/datasets?limit=${limit}&offset=${offset}`)
+}
+
+export function fetchDataset(datasetId: string): Promise<HistoryDatasetDetail> {
+  return requestJson(`/api/v1/datasets/${encodeURIComponent(datasetId)}`)
+}
+
 export function fetchModelStatus(): Promise<ModelStatus> {
   return requestJson<ModelStatus>('/api/v1/model-status')
+}
+
+export function getLlmConfig(): Promise<LlmConfig> {
+  return requestJson<LlmConfig>('/api/v1/llm-config')
+}
+
+export function saveLlmConfig(payload: SaveLlmConfigPayload): Promise<ModelStatus> {
+  return requestJson<ModelStatus>('/api/v1/llm-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function testLlmConnection(
+  payload: SaveLlmConfigPayload,
+): Promise<TestLlmConnectionResponse> {
+  return requestJson<TestLlmConnectionResponse>('/api/v1/llm-config/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteLlmConfig(): Promise<ModelStatus> {
+  return requestJson<ModelStatus>('/api/v1/llm-config', { method: 'DELETE' })
 }
