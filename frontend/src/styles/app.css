@@ -1601,7 +1601,7 @@ table.t tbody td.num { text-align: right; }
 .gen-step.pending { opacity: 0.5; }
 .gen-step.pending .ico { background: var(--bg-canvas); }
 
-/* P0.6 additions: planning badges, warnings, degraded chart, evidence note, sheet rows, error band */
+/* Task rail badges, warnings, degraded chart, evidence note, sheet rows, error band */
 .rail-item .badge {
   margin-left: auto;
   background: rgba(20,32,28,0.06);
@@ -1884,7 +1884,7 @@ table.t tbody td.num { text-align: right; }
   line-height: 1.5;
 }
 
-/* 数据出域提示：输入区底部说明会向模型发送哪些数据、不发送原始明细（产品方案 §8.5） */
+/* 数据出域提示：输入区底部说明会向模型发送哪些数据、不发送原始明细 */
 .egress-note {
   margin: 8px 2px 0;
   font-size: 11px;

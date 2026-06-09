@@ -33,7 +33,3 @@ status:
 	git branch --show-current
 	git status --short --branch
 	docker compose ps
-
-# 单向导出到公开 repo 的目标在 publish/targets.mk（私有，不导出）。
-# 公开仓无此文件时 -include 自动跳过，保持公开 Makefile 干净。
--include publish/targets.mk

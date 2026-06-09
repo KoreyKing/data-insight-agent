@@ -1,5 +1,5 @@
 // API client — extracted from the original App.tsx inline wiring.
-// Single source for the 5 P0 endpoints + model-status, plus shared payload types.
+// Single source for report workflow endpoints, model-status, and shared payload types.
 
 export type DataSourceRef = {
   id: string

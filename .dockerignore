@@ -20,12 +20,5 @@ data
 *.sqlite3
 .env
 .env.*
-# 私有内容与本地工具（绝不进镜像）
-产品方案
-需求验证
-草稿内容
-docs
-publish
-.claude
 # 杂项
 **/.DS_Store

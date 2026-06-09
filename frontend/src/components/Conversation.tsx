@@ -420,7 +420,7 @@ export default function Conversation({
     }
   }, [state.step, state.progress.length, state.parsing.length, state.report])
 
-  // 数据出域提示（产品方案 §8.5）：model 状态由 AppShell 统一拉取后下传
+  // 数据出域提示：model 状态由 AppShell 统一拉取后下传
   const modelConfigured = model?.status === 'configured' && Boolean(model.model)
   const egressTarget = modelConfigured ? `你配置的模型 ${model?.model}` : '你配置的模型'
 

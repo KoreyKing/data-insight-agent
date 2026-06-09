@@ -196,7 +196,7 @@
       "unit": "次",
       "aliases": ["inventory turnover"],
       "time_grain": "weekly",
-      "notes": "P0 样例数据未覆盖库存字段，遇到库存类问题需降级说明。"
+      "notes": "内置样例数据未覆盖库存字段，遇到库存类问题需降级说明。"
     }
   ],
   "dimensions": [

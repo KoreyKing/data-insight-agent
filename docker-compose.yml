@@ -1,6 +1,6 @@
 # 用户态：拉取预构建镜像，一行启动 —— docker compose up -d
 # 前端与 API 同在 8000（后端托管前端静态产物）。
-# 本地开发/构建请叠加 docker-compose.dev.yml（见 README）。
+# 从源码构建请叠加 docker-compose.dev.yml。
 services:
   app:
     image: ghcr.io/${GHCR_OWNER:-koreyking}/${GHCR_REPO:-data-insight-agent}:${GHCR_TAG:-latest}

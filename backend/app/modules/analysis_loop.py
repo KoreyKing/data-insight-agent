@@ -211,7 +211,7 @@ def build_loop_messages(
 
 SYSTEM_PROMPT = "\n".join(
     [
-        "你是 Data Insight Agent 的 P0 有界分析循环。",
+        "你是 Data Insight Agent 的有界分析循环。",
         "",
         '每轮只能返回一个 JSON object，格式为 {"tool":"...","args":{...}}。',
         "不要输出 Markdown，不要解释，不要包代码块。",

@@ -127,7 +127,7 @@ def test_analysis_loop_system_prompt_carries_sql_hard_rules():
 
 
 def test_analysis_loop_system_prompt_carries_strategy_directives():
-    """P0.5c：prompt 必须明示"取数 → record_finding → finish"的节奏。"""
+    """Prompt must make the query → record_finding → finish rhythm explicit."""
     from app.modules.analysis_loop import SYSTEM_PROMPT
 
     assert "record_finding" in SYSTEM_PROMPT
@@ -136,7 +136,7 @@ def test_analysis_loop_system_prompt_carries_strategy_directives():
 
 
 def test_default_limits_max_iterations_is_twelve():
-    """P0.5c：默认 12 轮，给模型留出 record_finding 余地。"""
+    """Default loop budget gives the model room to record findings before finish."""
     from app.modules.analysis_loop import DEFAULT_LIMITS, HARD_LIMITS
 
     assert DEFAULT_LIMITS["max_iterations"] == 12
@@ -144,7 +144,7 @@ def test_default_limits_max_iterations_is_twelve():
 
 
 def test_loop_messages_carry_iterations_left_in_state():
-    """P0.5c：每轮 user payload 必须含剩余轮次，给模型做预算判断。"""
+    """Each loop payload carries remaining iterations so the model can budget work."""
     from app.modules.analysis_loop import build_loop_messages
     from app.modules.dataset_store import materialize_table_to_sqlite
     from app.modules.tools import ToolRuntime

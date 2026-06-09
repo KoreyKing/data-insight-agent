@@ -1,8 +1,8 @@
-# Data Insight Agent — 开发规范
+# Data Insight Agent — 工程约定
 
 AI 数据分析 Agent：CSV/Excel 或数据库 + 用户自配 OpenAI-compatible 模型，通过自然语言完成取数、分析、制图、报告生成。开源自部署（Docker）。零售经营分析为首个内置场景。
 
-> 本文件是公开仓库的工程规范（技术栈、目录约定、验证、协作纪律）。面向贡献者与自部署者。
+> 本文件是公开仓库的工程约定（技术栈、目录约定、验证、协作纪律）。面向贡献者与自部署者。
 
 ## 技术栈与版本
 - 后端：Python 3.11 + FastAPI + APScheduler + openai SDK + pandas/openpyxl + sqlglot；包管理 uv（锁文件 `uv.lock` 必须提交）
@@ -35,7 +35,7 @@ data-insight-agent/
 ├── docs/architecture.md        # 架构契约
 ├── Dockerfile                  # 单容器多阶段构建（前端 build → 后端托管 dist）
 ├── docker-compose.yml          # 用户态（拉预构建镜像一行起）
-├── docker-compose.dev.yml      # 本地构建态
+├── docker-compose.dev.yml      # 源码构建覆盖文件
 ├── Makefile, .github/workflows/  # 验证入口 / CI + 镜像构建推送
 └── .env.example
 ```
@@ -59,13 +59,13 @@ data-insight-agent/
 - 文档文件：中文命名，清晰表达内容
 
 ## 验证清单（每次改完必跑）
-- 统一入口：`make check` 跑完整本地代码验证
+- 统一入口：`make check` 跑完整代码验证
 - 后端：`cd backend && uv run ruff check . && uv run pytest`
 - 前端：`cd frontend && pnpm typecheck && pnpm lint && pnpm build`
-- 启动冒烟：本地构建 `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`，`curl localhost:8000/health` 与浏览器 `localhost:8000` 均 200
+- 启动冒烟：源码构建 `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`，`curl localhost:8000/health` 与浏览器 `localhost:8000` 均 200
 - 浏览器验收：涉及前端页面、上传、图表、报告预览、交互状态的改动，必须用浏览器打开页面验证，并在汇报中说明访问 URL、页面状态、关键证据
 
-## 协作纪律（Vibe Coding）
+## 协作纪律
 1. **规划驱动**：跨文件/跨模块改动先出方案；SQL/调度/邮件相关改动一律先规划
 2. **边界先行**：每个任务说明书有「目标/范围/禁区/验证标准」四段
 3. **接口先行**：跨层改动前必须先读 `docs/architecture.md`
@@ -83,9 +83,9 @@ data-insight-agent/
 - 多 Agent 只用于任务可拆、写入范围清晰且互不冲突的场景
 
 ## Done 标准
-- 每阶段完成必须汇报：变更摘要、验证命令与结果、浏览器/Docker 状态、review 结论、剩余风险
+- 每个变更完成必须汇报：变更摘要、验证命令与结果、浏览器/Docker 状态、review 结论、剩余风险
 - 跨后端/前端/契约的改动，先完成实现侧自检，再做 review 侧检查
-- 完成结论必须有新鲜验证证据支撑；环境不可用时按「本地代码验证完成 / 环境验证未完成」分层说明
+- 完成结论必须有新鲜验证证据支撑；环境不可用时按「代码验证完成 / 环境验证未完成」分层说明
 
 ## 规则文件同步
 - `CLAUDE.md` 与 `AGENTS.md` 内容一致（供不同工具读取），改其一须同步另一。

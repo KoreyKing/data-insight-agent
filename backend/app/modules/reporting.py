@@ -84,7 +84,7 @@ def generate_traceable_report(table: TableData, analysis_goal: str) -> dict[str,
         summary=build_summary(kpis, findings),
         kpis=kpis,
         findings=findings,
-        warnings=[{"code": "P0_THIN_LOOP", "message": "当前为无 LLM 的 P0 固定报告闭环。"}],
+        warnings=[{"code": "FALLBACK_REPORT", "message": "当前为无 LLM 的固定报告闭环。"}],
         metadata={
             "data_source": asdict(table.data_source_ref),
             "row_count": table.row_count,

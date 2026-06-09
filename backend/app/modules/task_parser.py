@@ -99,7 +99,7 @@ def build_parse_messages(
         {
             "role": "system",
             "content": (
-                "你是 Data Insight Agent 的 P0 任务解析器。"
+                "你是 Data Insight Agent 的任务解析器。"
                 "只把零售经营分析目标解析为结构化 JSON，不要输出 Markdown。"
                 "如果用户目标明显不属于当前 Retail Operations Context Pack，"
                 "返回 intent_match=false。"

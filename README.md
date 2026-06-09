@@ -55,18 +55,6 @@ docker compose up -d   # 重启生效
 ## 环境要求
 
 - Docker Desktop（推荐方式，唯一硬性要求）。
-- 本地开发（可选）：Python 3.11+、Node 20+、`uv`、`pnpm`。
-
-## 本地开发（可选）
-
-```bash
-make dev            # 同时启动前后端
-make backend-dev    # 仅后端
-make frontend-dev   # 仅前端
-make check          # 跑后端 lint+测试、前端类型检查+lint+构建
-```
-
-`http://localhost:5173` 不是静态页面，必须先启动前端服务；报告生成、样例与上传接口还需后端运行。本机 `pnpm dev` 默认把 `/api` 代理到 `http://127.0.0.1:8000`。
 
 ## 常见问题
 
