@@ -1,7 +1,7 @@
 {
   "meta": {
     "name": "Retail Operations",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "description": "零售经营分析示例 Context Pack。覆盖销售、商品、门店、渠道、客户类型的周度经营复盘。"
   },
   "business_context": {
@@ -169,7 +169,7 @@
     },
     {
       "name": "订单数",
-      "calculation": "COUNT(DISTINCT order_id) WHERE order_status != 'refunded'",
+      "calculation": "COUNT(DISTINCT order_id) WHERE order_status IN ('completed', 'partial_refund')",
       "unit": "单",
       "aliases": ["订单量", "客流", "orders"],
       "time_grain": "daily",
@@ -185,7 +185,7 @@
     },
     {
       "name": "退款率",
-      "calculation": "COUNT(CASE WHEN order_status IN ('refunded', 'partial_refund') THEN 1 END) / COUNT(*)",
+      "calculation": "COUNT(CASE WHEN order_status IN ('refunded', 'partial_refund') THEN 1 END) / COUNT(CASE WHEN order_status IN ('completed', 'partial_refund', 'refunded') THEN 1 END)",
       "unit": "%",
       "aliases": ["return rate", "refund ratio"],
       "time_grain": "daily",

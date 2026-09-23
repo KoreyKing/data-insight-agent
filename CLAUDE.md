@@ -6,7 +6,7 @@ AI 经营分析 Agent：连接 CSV / Excel，用户自配 OpenAI-compatible 模�
 
 ## 技术栈与版本
 - 后端：Python 3.11 + FastAPI + SQLAlchemy 2.0 + openai SDK + pandas/openpyxl + sqlglot；包管理 uv（锁文件 `uv.lock` 必须提交）
-- 前端：Node 22.13+ + Vite + React + TypeScript；包管理 pnpm（锁文件 `pnpm-lock.yaml` 必须提交）；单测 Vitest
+- 前端：Node 22.13+ + Vite + React + TypeScript；包管理 pnpm（锁文件 `pnpm-lock.yaml` 必须提交）；单测 Vitest；字体随应用打包（`@fontsource`），页面不引用第三方资源
 - 工具链版本：pnpm 版本只在 `frontend/package.json` 的 `packageManager` 定义，CI 与 Dockerfile 都从这里读取；Node 用维护期内的 LTS（当前 22），升级时 CI、Dockerfile 与文档一起改
 - 数据库：SQLite 是唯一支持的应用库（默认 `./data/app.db`；`APP_DB_URL` 指向非 SQLite 时启动即报错）。MySQL / PostgreSQL 只读直连是规划中的数据源能力，不是应用库选项
 - 可视化：Web 用 ECharts
@@ -59,7 +59,7 @@ data-insight-agent/
 
 ## 关键术语
 - **BYOM（自配模型）**：用户自带 OpenAI-compatible 模型 API Key，产品方不绑定模型。两种配置方式：Web 界面模型配置（保存在 `data/llm_config.json`，文件权限 600，**优先于 `.env`**）与 `.env` 的 `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`；支持 provider preset 和 custom base_url。注意：数据仍发给用户所配模型服务商。
-- **Context Pack**：垂直场景的结构化业务知识包（指标口径、字段别名、维度定义、异常阈值、分析模板、校验规则）。活动包存于 SQLite，可在 Web「业务口径设置」或经 `/api/v1/context-pack` 编辑，保存前经服务端校验；每份报告记录生成时的口径版本（编辑后为 `{出厂版本}-local.{N}`）。内置 JSON 是出厂镜像，只用于新部署种子与「恢复默认」。详见 `docs/architecture.md`。
+- **Context Pack**：垂直场景的结构化业务知识包（指标口径、字段别名、维度定义、异常阈值、分析模板、校验规则）。活动包存于 SQLite，可在 Web「业务口径设置」或经 `/api/v1/context-pack` 编辑，保存前经服务端校验；每份报告记录生成时的口径版本（编辑后为 `{出厂版本}-local.{N}`）。内置 JSON 是出厂镜像，用于新部署种子、「恢复默认」，以及未编辑（`revision == 0`）活动包在启动时的跟随更新；修改出厂 JSON 的内容必须同时提升 `meta.version`，并在 `backend/tests/test_context_pack_follow.py` 的出厂版本登记表末尾追加新版本与内容摘要（已有项不改）。详见 `docs/architecture.md` §6.4。
 - **有界 agentic 循环**：模型在 while 循环里自主决定下一步（取数/下钻/停止），但被硬约束包裹（迭代上限、token 预算、执行控制层全程校验）。
 
 ## 命名约定
@@ -101,7 +101,7 @@ data-insight-agent/
 ## 安全与数据
 - 密钥、token、密码不进代码、提交与日志；API key 不出现在接口响应、日志与报告中（`docs/architecture.md` §4.1）
 - 仓库里只放合成数据：样例与 eval fixture 由 `backend/scripts/` 的生成脚本产出，真实业务数据不进仓库
-- 应用没有内置登录；涉及端口暴露、鉴权或数据外发的改动先出方案
+- 应用没有内置登录，`docker-compose.yml` 默认只把端口绑定到本机；涉及端口暴露、鉴权或数据外发的改动先出方案
 
 ## 贡献方式
 - 本仓库由维护者同步发布；外部改动先开 Issue 讨论，经维护者合入后随下一次发布进入本仓库

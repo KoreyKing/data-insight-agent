@@ -62,18 +62,18 @@ Pick a model that follows JSON instructions reliably; very small models tend to 
 - **Format:** plain tables with a single header row — CSV (UTF-8) or `.xlsx` (choose the sheet in the UI). Merged cells, multi-row headers and pivot tables are not supported.
 - **Columns:** one row per order line. An **order date** and a **net sales amount** are required. Store, product category and channel enable drill-down; order ID, order status, refund amount and unit cost enable accurate order counts, refund rate and gross margin.
 - **Column names** are matched through aliases, e.g. `订单日期` / `date`, `门店` / `store`, `销售额` / `net_sales`. If a column is not recognized, add your header as an alias in 「业务口径设置」 (business rules).
-- **Order status**, if present, must use the values `completed`, `partial_refund` and `refunded`. Without an order-status column every row counts as completed.
+- **Order status**, if present, is normalized automatically: common spellings such as `已完成` / `交易成功` / `paid`, `部分退款` / `partially refunded` and `已退款` / `returned` map to completed, partial refund and refunded. Rows whose status it can't recognize (e.g. `已取消`) are left out of every core metric (sales, orders, average order value and refund rate), and when the report finishes, the analysis conversation shows how many rows were affected. Without an order-status column every row counts as completed.
 
 ## Data & privacy
 
 - Everything stays on your machine: reports, datasets and settings live in `./data` (a SQLite file plus uploaded files).
 - With a remote model configured, the data schema, aggregated query results and prompt text are sent to **the model provider you chose**. Raw row-level records are not sent.
-- Demo mode makes no model calls. The web UI loads its fonts from Google Fonts; apart from that, the app does not contact third parties.
+- Demo mode makes no model calls, and the web UI loads no third-party resources (fonts ship with the app).
 
 ## Security
 
 - There is **no login or user management**. Anyone who can reach port 8000 can read your reports and change the model settings.
-- `docker-compose.yml` publishes port 8000 on all network interfaces. For local-only use, change the mapping to `"127.0.0.1:8000:8000"`. Do not expose the app to the internet without an authenticating reverse proxy in front of it.
+- `docker-compose.yml` binds port 8000 to `127.0.0.1`, so only this machine can open the app. To reach it from other devices, change the mapping to `"8000:8000"` and use it only on a trusted network. Do not expose the app to the internet without an authenticating reverse proxy in front of it.
 
 ## Upgrade & backup
 
@@ -82,7 +82,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The database structure upgrades automatically on startup (new tables and columns only; existing data is kept). Back up the `./data` directory before upgrading.
+The database structure upgrades automatically on startup (new tables and columns only; existing data is kept). Business rules you never edited follow the new factory version; edited rules are kept as they are (reset them in 「业务口径设置」 to adopt the new defaults). Back up the `./data` directory before upgrading.
 
 ## Current limitations
 
@@ -101,7 +101,7 @@ The database structure upgrades automatically on startup (new tables and columns
 
 ## FAQ
 
-- **Port 8000 is blank or unreachable:** check that `docker compose up -d` succeeded and the container is running; the first run needs time to pull the image.
+- **Port 8000 is blank or unreachable:** check that `docker compose up -d` succeeded and the container is running; the first run needs time to pull the image. From another device, see [Security](#security): the port only listens on this machine by default.
 - **"Model not configured":** without a model only the built-in sample works (demo mode). Configure a model to analyze your own files.
 - **Ollama / vLLM on the same machine doesn't connect:** inside Docker, `localhost` is the container itself. Use a custom base URL such as `http://host.docker.internal:11434/v1` (Docker Desktop; on Linux, add `extra_hosts: ["host.docker.internal:host-gateway"]` to the service).
 - **Upload fails or fields are missing:** see [Use your own data](#use-your-own-data).

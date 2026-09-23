@@ -19,6 +19,8 @@ from app.timestamps import utc_now_iso
 
 DEFAULT_METRICS = ["销售额", "订单数", "客单价", "退款率"]
 DEFAULT_DIMENSIONS = ["日期", "门店", "商品类目", "渠道"]
+# 参与核心指标的订单状态（§6.4）：退款率的分母只数这三种，无法识别的取值不参与任何核心指标
+COUNTED_STATUSES = "order_status IN ('completed', 'partial_refund', 'refunded')"
 
 
 def default_structured_task(
@@ -97,7 +99,10 @@ def generate_traceable_report(
         summary=build_summary(kpis, findings),
         kpis=kpis,
         findings=findings,
-        warnings=[{"code": "FALLBACK_REPORT", "message": "当前为无 LLM 的固定报告闭环。"}],
+        warnings=[
+            {"code": "FALLBACK_REPORT", "message": "当前为无 LLM 的固定报告闭环。"},
+            *handle.warnings,
+        ],
         history_context=history_context,
         context_pack=pack,
         metadata={
@@ -292,7 +297,7 @@ def average_order_value(handle: DatasetHandle, start: pd.Timestamp, end: pd.Time
 def refund_rate(handle: DatasetHandle, start: pd.Timestamp, end: pd.Timestamp) -> float:
     result = run_validated_query(
         handle,
-        f"""SELECT COUNT(*) AS total_orders,
+        f"""SELECT SUM(CASE WHEN {COUNTED_STATUSES} THEN 1 ELSE 0 END) AS total_orders,
   SUM(CASE WHEN order_status IN ('refunded', 'partial_refund') THEN 1 ELSE 0 END) AS refund_orders
 FROM sales_orders
 WHERE order_date BETWEEN '{iso_date(start)}' AND '{iso_date(end)}';""",
@@ -502,12 +507,12 @@ LIMIT 100;"""
 
 def category_refund_sql(current_start: pd.Timestamp, current_end: pd.Timestamp) -> str:
     return f"""SELECT category_l1,
-  COUNT(*) AS orders,
+  SUM(CASE WHEN {COUNTED_STATUSES} THEN 1 ELSE 0 END) AS orders,
   SUM(CASE WHEN order_status IN ('refunded', 'partial_refund') THEN 1 ELSE 0 END) AS refund_orders
 FROM sales_orders
 WHERE order_date BETWEEN '{current_start.date()}' AND '{current_end.date()}'
 GROUP BY category_l1
-ORDER BY refund_orders * 1.0 / COUNT(*) DESC
+ORDER BY refund_orders * 1.0 / SUM(CASE WHEN {COUNTED_STATUSES} THEN 1 ELSE 0 END) DESC
 LIMIT 100;"""
 
 

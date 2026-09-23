@@ -1,6 +1,6 @@
 # Data Insight Agent 架构契约
 
-> 状态：v0.17（2026-09-22）。公开架构契约：描述当前自部署版本的系统分层、API 合约、执行控制与数据模型边界；各版本变更见 §8 版本历史。
+> 状态：v0.18（2026-09-23）。公开架构契约：描述当前自部署版本的系统分层、API 合约、执行控制与数据模型边界；各版本变更见 §8 版本历史。
 > 用途：所有跨层 / 跨模块改动前必须先读本文件。
 > 维护：任何契约变更必须同步更新本文件；模块输入 / 输出契约先改本文件、再改实现（§8）。
 
@@ -316,7 +316,7 @@ Analysis Workflow
   - 每次都过 SQL Validator（拒绝写操作、强制 LIMIT、校验字段存在性）
   - 敏感字段（`is_sensitive=true`）的原始值不返回给模型，替换为 `[MASKED]`
   - 超时 30s，硬上限 120s
-- 当前实现：返回给模型的 `rows` 限前 5 行预览，完整结果通过 `data_ref` 在后续工具间引用
+- 当前实现：返回给模型的 `rows` 限前 5 行预览，完整结果通过 `data_ref` 在后续工具间引用（截断标注与全称判断约束见 §8 待定契约项）
 
 **Tool 2: `profile_column`**
 - 职责：获取字段的快速统计摘要
@@ -435,6 +435,7 @@ previous_comparison {
 - 不扩展 finding type 枚举（`trend|anomaly|recommendation` 维持封闭集合）；「证据可展开 / 跳转上期」由前端调既有 `GET /api/v1/reports/{previous_report_id}`，不新增 API
 - 每条结论关联：SQL 原文、数据源、运行时间、分析步骤序号
 - **体验模式固定报告（v0.17 登记）**：未配置或已关闭模型（`/model-status` 为 `not_configured` / `disabled`）时，共享 runner 以确定性固定流程生成报告（不调用模型，`loop_rounds = 0`）；生成成功时 `status` 为 `completed`，`warnings[]` 含 `FALLBACK_REPORT`（数据校验失败时照常返回 `failed` 与对应错误码，不附此码）；前端按通用 warning 展示其 `message`。更早版本以 `P0_THIN_LOOP` 发出同一信号，已落库的旧报告保留原码，消费方按 `message` 展示、不按 code 分支
+- **订单状态取值无法识别（v0.18 登记）**：物化时 `order_status` 按 §6.4 归一化后仍有无法识别的取值（含空值）时，报告 `warnings[]` 含 `ORDER_STATUS_UNRECOGNIZED`，`message` 写明行数与示例取值；这些行保留原值，不参与任何核心指标（销售额、订单数、客单价，以及退款率的分子与分母）。体验模式与真实模型两条报告路径共用；数据中没有订单状态列时不产生此 warning
 
 **history_context 运行时构建**
 
@@ -605,7 +606,7 @@ AnalysisTask（表名 analysis_tasks，v0.8 新增）{
 ContextPackRecord（表名 context_packs，v0.8 新增）{
   id: uuid (pk)
   name: str(120) (unique)              # 业务身份键（当前不可改名）
-  base_version: str(40)                # 内置出厂版本，如 "1.0.0"
+  base_version: str(40)                # 种子或跟随时的出厂版本，如 "1.0.2"（revision 0 时随出厂更新，§6.4）
   revision: int = 0                    # 单调递增，永不重置（恢复默认也 +1）；版本语义见 §6.4
   payload_json: json                   # 完整 ContextPack（§6.1 schema）
   created_at / updated_at: datetime
@@ -769,6 +770,8 @@ System Prompt 结构:
 
 **存储与种子**：活动包存 `context_packs` 表（§5.1）。应用启动时表空则以内置 JSON 种子写入（`revision=0`）；运行期读取失败容错回落内置文件（同时记录 `CONTEXT_PACK_NOT_FOUND` 边界）。内置 JSON 永远只读不动。
 
+**未编辑的活动包跟随出厂（v0.18）**：应用启动时，若活动包 `revision == 0`（从未经 PUT 或 reset 保存）且其内容（忽略 `meta.version`）或 `base_version` 与当前内置出厂包不同，就改写为当前出厂内容，`base_version` 更新为出厂 `meta.version`，`revision` 仍为 0；`revision ≥ 1` 的活动包一律不动（用户修改过或恢复过默认）。这样升级带来的出厂口径更新会自动到达未编辑的部署，界面不会把「出厂内容已更新」误显示为「已修改」。改写以 `revision == 0` 为条件执行，与同时发生的保存互不覆盖。为保证下文的版本串唯一，**内置出厂包的内容每次变化都必须提升 `meta.version`**；测试按版本登记出厂内容摘要（只追加），内容变化而版本号未提升即失败。
+
 **版本语义**：每次保存（PUT 或 reset）`revision + 1`，永不重置、永不回退。有效版本串（写入 `payload.meta.version`、报告与上传响应的 `context_pack_version`）：
 
 ```
@@ -781,6 +784,8 @@ revision >= 1  →  "{base_version}-local.{revision}"   # 如 "1.0.0-local.3"
 **编辑范围**：UI 仅开放三块——metrics（calculation / aliases / unit / notes）、data_dictionary 列的 aliases / description、`report_preferences.anomaly_thresholds`。结构性要素（表名、canonical 列名集合、`display_name`、指标增删、`meta.name`）当前冻结：SQL Validator 按固定单表 + 已知字段做白名单校验（§4），开放结构编辑等于让用户修改安全边界的依据；结构扩展属后续行业包扩展工作。
 
 **别名权威（v0.11）**：字段识别的别名来源**唯一**是活动包 `data_dictionary` 列的 `aliases`（外加 canonical 列名自身）。`field_mapping` 内置的 `CANONICAL_ALIASES` 回退表降级为「活动包不含该 canonical 列时」的兜底——内置包已覆盖全部 canonical 列且其 aliases 是回退表的超集，因此该降级对出厂态零行为变化，但它是「删除别名 → 该列不再被识别」这条因果链成立的前提（§7 capture 断言依赖）。基于列名 / 数据类型的推断（`infer_by_name_and_type`，仅 `order_date` / `net_sales_amount`）不属别名机制，保留不变。
+
+**订单状态取值归一化（v0.18）**：物化时 `order_status` 的取值先去首尾空白、转小写，并把空格与连字符视为下划线，再按内置同义词表（`dataset_store.ORDER_STATUS_ALIASES`）映射到分析口径的三个取值——`completed`（如 已完成、交易成功、已付款、已发货、已签收、paid、shipped、delivered）、`partial_refund`（如 部分退款、部分退货、partially_refunded）、`refunded`（如 已退款、全额退款、退货、returned）。无法识别的取值（如 已取消、待付款、交易关闭）原样保留，并在报告中给出 `ORDER_STATUS_UNRECOGNIZED`（§3.3）；一个取值都无法识别时（如数字编码）整列保留原值与原类型；数据没有订单状态列时，全部行按 `completed` 计。同义词表是数据接入的确定性规则，不放进活动包、不在界面编辑。核心 KPI 只统计这三种状态的行：销售额、订单数与客单价计 `completed` / `partial_refund`，退款率 = (`refunded` + `partial_refund`) / 三种状态合计；出厂口径的 `calculation` 与此写法一致。
 
 **单次运行同源（v0.13）**：一次请求 / 运行（样例与上传预览、`/tasks/parse`、`/reports/run`、`/tasks/{id}/rerun`、eval 用例）只解析**一次**活动包快照，并把同一快照显式传给该运行内的全部口径消费方——字段识别、**数据物化**（`materialize_table_to_sqlite` 决定哪些列进入 `sales_orders` 分析表，即 SQL 实际可见的字段）、prompt 注入、异常阈值、报告与数据集记录的 `context_pack_version`。物化环节不得再次读取活动包：否则并发保存口径时，报告记录的版本与实际参与 SQL 的列集可能分属两版口径，可追溯链在语义层断开。rerun 的指纹比对与物化共享同一快照，服务端重跑由此对口径编辑原子（前端预检语义见 §2.3）。只有未显式传入快照的调用方才自行读取一次活动包（兼容入口）。
 
@@ -806,7 +811,7 @@ eval 是报告质量的回归测试与发布门：`make eval` 通过率须为 10
 
 **断言实现纪律**：断言侧**禁止 import 产品计算函数**（reporting.py 等）——KPI 等数值必须用独立实现（pandas 复算）或读 QA 基准字面值比对，防止 f(x)==f(x) 自证循环。
 
-**QA 基准契约（v2）**：`backend/.sample-data-qa.json` 由样例生成器同步产出，v2 起必须包含：4 个核心 KPI（销售额/订单数/客单价/退款率）的本期与上期窗口基准值 + 既有 6 项预埋异常指标。**QA 侧计算口径必须与产品报告口径一致**（订单数的 order_status 过滤范围等）——两侧分歧视为 bug，先裁决业务口径再对齐双方；订单数两侧均只计 completed / partial_refund 状态（确定性 KPI 口径；口径包 `calculation` 只进模型上下文，见能力边界）。
+**QA 基准契约（v2）**：`backend/.sample-data-qa.json` 由样例生成器同步产出，v2 起必须包含：4 个核心 KPI（销售额/订单数/客单价/退款率）的本期与上期窗口基准值 + 既有 6 项预埋异常指标。**QA 侧计算口径必须与产品报告口径一致**（订单数的 order_status 过滤范围等）——两侧分歧视为 bug，先裁决业务口径再对齐双方；订单数两侧均只计 completed / partial_refund 状态，退款率两侧的分母均为三种可识别状态合计（确定性 KPI 口径；口径包 `calculation` 只进模型上下文，见能力边界）。
 
 **第二期 fixture 规格（供 rerun 用例与浏览器验收使用）**：
 - 形态：**追加式**——period2 文件 = period1 全量行（同 SEED 确定性复现）+ 顺延新一周（独立子 rng），模拟「同一导出模板、导出范围顺延」的真实行为；重叠部分与第一期文件逐行一致，避免双「上期」口径在 fixture 内数值分叉
@@ -883,8 +888,11 @@ backend/eval/
 |---|---|---|
 | 周期运行契约必解项 | 业务时区配置，以及 Web / PDF 时区标注、模型 SQL 中的 `'now'` / `'localtime'`、模型叙事日期三项待决 | §2.4 第 7 条 |
 | 周期运行契约必解项 | 同一任务的周期身份判别（time_range 对齐、同期重跑去重）；调度实现不得直接继承「链序 = 期序」假设 | §3.3 |
+| 周期运行契约必解项 | 结论一致性：`query_data` 只把前 5 行预览交给模型，工具结果须显式标注截断，prompt 约束模型不对未见行做「唯一 / 最大 / 不在前 N」类全称判断；以 eval 前后对照与真实数据复验，在周期推送上线前完成 | §3.2 |
 | 周期运行契约候选 | evidence 附注独立字段化（`evidence.note`）与无依据结论降级标注 | §3.2、§7 |
 | 周期运行阶段候选 | 文件数据源周期接入时的结构容差（首选：按任务既有字段集投影重跑） | §5.2 |
+| 周期运行阶段候选 | 报告 `warnings[]`（如 `ORDER_STATUS_UNRECOGNIZED`）在历史报告页、PDF 与推送中展示；当前只在生成时的分析对话中显示 | §3.3 |
+| 周期运行阶段候选 | 「恢复默认」的版本基线：reset 保留原 `base_version`，恢复到新出厂内容后版本串仍是旧前缀（如 `1.0.0-local.3`）；需定义 reset 是否改基线，并让界面显示当前出厂版本 | §6.4 |
 | 周期运行阶段候选 | KPI 计算引擎读取口径包 `calculation`（涉及执行用户可编辑 SQL 片段，须过 §4 安全评审） | §7 |
 | 周期运行阶段候选 | `iterations_used` 别名移除（该阶段收口时评估）；反馈 voter 暴露（推送给多位读者时复核） | §3.3、§5.1 |
 | 后续扩展 | 多包集合资源 `/context-packs/{id}`、schema_fingerprint v2（多表）、口径结构扩展（行业包） | §2.3、§5.2、§6.4 |
@@ -910,3 +918,4 @@ backend/eval/
 | v0.15 | 2026-09-20 | 入参边界加固：§2 新增**请求体边界校验**——所有 `/api/v1/*` JSON 请求体进入业务处理前统一扫描，含无法 UTF-8 编码的字符串即 400 `REQUEST_BODY_INVALID`，字典键与任意深度嵌套同查、multipart 跳过、非法 JSON 仍走 422（`POST /reports/run` 的 `task` 是开放式字典合并，字段无法穷举，逐字段校验不成立）；§2 列表分页 `limit`/`offset` 统一夹逼后回显，`offset` 上界钉在 `2^63-1`（越界入参不再在 SQLite 驱动层抛 `OverflowError`）；§2.3 新增 `REQUEST_BODY_INVALID` 错误码，`TASK_TITLE_INVALID` 覆盖 POST 创建路径，`FEEDBACK_INVALID` 的孤立代理项分支上移到边界（v0.14 实质约定不变） |
 | v0.16 | 2026-09-22 | 时间戳契约：§2.4 新增——生成一律 UTC 且与进程时区无关；库列 `UTCDateTime`（DDL 不变）；对外时刻统一带 `+00:00`，含历史报告 payload 内的 `metadata.ran_at` / `evidence.ran_at` / `previous_ran_at`；前端按查看者本地时区展示；存量报告的时刻是生成进程本地时间（`reports.ran_at` 列同样如此，不是 UTC），按 `ran_at − created_at` 取整推断偏移、在读取时换算、不迁移数据；报告先后按换算后的运行时刻，历史列表 SQL 分页改按 `created_at`；业务时区登记为周期运行契约必解项。§2 REST 约定、§2.2 列表排序、§2.3 context-pack 时间说明与任务报告链排序、§3.3 `previous_ran_at` 与上期选择、§5.1 时刻列类型与 `last_run_at` 派生相应改写。对抗评审后补充：`UTCDateTime` 拒收无时区值、带其他偏移的 payload 值统一为 `+00:00`、列与 payload 各自推断偏移、前端对无偏移串原样显示、周期运行契约三项待决（时区标注 / SQL `localtime` / 叙事日期） |
 | v0.17 | 2026-09-22 | §3.3 登记体验模式固定报告的 warning 码 `FALLBACK_REPORT`（此前实现发出 `P0_THIN_LOOP`，未入契约）；§8 新增「待定契约项」索引。全文改为公开契约措辞：去掉内部阶段标注、人名与内部文档引用，阶段限定改写为「当前」，后续阶段改写为「规划中」或「周期运行契约 / 阶段」，执行控制调整门槛写明「实现侧不得自行放宽、经维护者人工评审确认」。事实修正：§2.2 路由清单补 `datasets` / `context_pack` / `feedback`；§7 QA 基准的订单数口径由修复计划改写为已对齐的现状；§1 总览图注明规划能力。版本历史改为升序 |
+| v0.18 | 2026-09-23 | §6.4 新增订单状态取值归一化（常见中英文写法映射到 `completed` / `partial_refund` / `refunded`，无法识别的保留原值）与「未编辑的活动包跟随出厂」规则（`revision == 0` 时启动期同步出厂内容与版本；出厂内容变化必须提升 `meta.version`）；出厂版本提升到 `1.0.2`，订单数与退款率的 `calculation` 与 KPI 口径对齐；§3.3 登记 `ORDER_STATUS_UNRECOGNIZED`，无法识别的行不参与任何核心指标（退款率分母改为三种可识别状态合计）；§7 QA 基准口径同步；§8 待定契约项加入结论一致性（预览截断标注与全称判断约束）、报告 warnings 的展示范围与「恢复默认」的版本基线；§3.2、§5.1 相应注记 |

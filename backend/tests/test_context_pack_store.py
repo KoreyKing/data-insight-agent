@@ -15,6 +15,7 @@ from app.db.engine import SessionLocal, get_engine, init_db
 from app.db.models import ContextPackRecord
 from app.main import app
 from app.modules.context_pack import (
+    builtin_base_version,
     builtin_pack_name,
     effective_version,
     load_active_context_pack,
@@ -29,6 +30,8 @@ from app.modules.persistence import (
     save_context_pack,
     seed_context_pack,
 )
+
+FACTORY_VERSION = builtin_base_version()
 
 
 def active_record() -> ContextPackRecord | None:
@@ -107,7 +110,7 @@ def test_load_active_pack_reads_stored_payload_with_computed_version():
 
     active = load_active_context_pack()
 
-    assert active["meta"]["version"] == "1.0.0-local.1"
+    assert active["meta"]["version"] == f"{FACTORY_VERSION}-local.1"
     channel = next(
         column
         for column in active["data_dictionary"]["tables"][0]["columns"]
@@ -130,7 +133,7 @@ def test_load_active_pack_falls_back_when_stored_payload_is_invalid(caplog):
         active = load_active_context_pack()
 
     assert {metric["name"] for metric in active["metrics"]} >= {"销售额"}
-    assert active["meta"]["version"] == "1.0.0"
+    assert active["meta"]["version"] == FACTORY_VERSION
     assert "CONTEXT_PACK_NOT_FOUND" in caplog.text
 
 
@@ -143,13 +146,13 @@ def test_save_and_reset_keep_revision_monotonic_and_restore_builtin_content():
         saved = save_context_pack(session, edited)
         session.commit()
         assert saved.revision == 1
-        assert saved.payload_json["meta"]["version"] == "1.0.0-local.1"
+        assert saved.payload_json["meta"]["version"] == f"{FACTORY_VERSION}-local.1"
 
         restored = reset_context_pack(session)
         session.commit()
 
     assert restored.revision == 2
-    assert restored.payload_json["meta"]["version"] == "1.0.0-local.2"
+    assert restored.payload_json["meta"]["version"] == f"{FACTORY_VERSION}-local.2"
     assert restored.payload_json["report_preferences"] == (
         load_default_context_pack()["report_preferences"]
     )
@@ -203,7 +206,7 @@ def test_upload_and_report_responses_carry_active_pack_version(endpoint: str, tm
     with TestClient(app) as client:
         factory = client.get(endpoint)
         assert factory.status_code == 200
-        assert factory.json()["context_pack_version"] == "1.0.0"
+        assert factory.json()["context_pack_version"] == FACTORY_VERSION
 
         edited = deepcopy(load_default_context_pack())
         edited["report_preferences"]["anomaly_thresholds"]["significant_pct"] = 12.5
@@ -217,9 +220,9 @@ def test_upload_and_report_responses_carry_active_pack_version(endpoint: str, tm
             json={"analysis_goal": "帮我生成周度经营复盘"},
         )
 
-    assert after_edit.json()["context_pack_version"] == "1.0.0-local.1"
+    assert after_edit.json()["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
     assert report.status_code == 200
-    assert report.json()["report"]["context_pack_version"] == "1.0.0-local.1"
+    assert report.json()["report"]["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
     assert str(tmp_path) not in report.text
 
 
@@ -256,7 +259,7 @@ def test_get_context_pack_seeds_and_returns_factory_state():
     body = response.json()
     assert response.status_code == 200
     assert body["name"] == builtin_pack_name()
-    assert (body["version"], body["revision"], body["is_modified"]) == ("1.0.0", 0, False)
+    assert (body["version"], body["revision"], body["is_modified"]) == (FACTORY_VERSION, 0, False)
     assert body["updated_at"]
     assert body["payload"]["metrics"] == load_default_context_pack()["metrics"]
     assert active_record() is not None
@@ -272,11 +275,15 @@ def test_put_alias_edit_bumps_revision_and_changes_field_recognition():
 
     body = response.json()
     assert response.status_code == 200
-    assert (body["version"], body["revision"], body["is_modified"]) == ("1.0.0-local.1", 1, True)
+    assert (body["version"], body["revision"], body["is_modified"]) == (
+        f"{FACTORY_VERSION}-local.1",
+        1,
+        True,
+    )
     assert body["warnings"] == []
     assert column_by_name(body["payload"], "channel")["aliases"] == ["投放渠道"]
-    assert before == "1.0.0"
-    assert after["version"] == "1.0.0-local.1"
+    assert before == FACTORY_VERSION
+    assert after["version"] == f"{FACTORY_VERSION}-local.1"
     assert "channel" not in canonical_fields(
         build_field_profile(chinese_header_schema(), after["payload"])
     )
@@ -292,8 +299,8 @@ def test_put_accepts_wrapped_payload_and_overrides_server_managed_fields():
 
     body = response.json()
     assert response.status_code == 200
-    assert body["version"] == "1.0.0-local.1"
-    assert body["payload"]["meta"]["version"] == "1.0.0-local.1"
+    assert body["version"] == f"{FACTORY_VERSION}-local.1"
+    assert body["payload"]["meta"]["version"] == f"{FACTORY_VERSION}-local.1"
     assert body["payload"]["history_context"] == load_default_context_pack()["history_context"]
 
 
@@ -434,11 +441,11 @@ def test_reset_restores_factory_content_and_keeps_revision_monotonic():
 
     assert (saved["revision"], saved["is_modified"]) == (1, True)
     assert (restored["revision"], restored["is_modified"]) == (2, False)
-    assert restored["version"] == "1.0.0-local.2"
+    assert restored["version"] == f"{FACTORY_VERSION}-local.2"
     assert column_by_name(restored["payload"], "channel")["aliases"] == (
         column_by_name(load_default_context_pack(), "channel")["aliases"]
     )
-    assert sample["context_pack_version"] == "1.0.0-local.2"
+    assert sample["context_pack_version"] == f"{FACTORY_VERSION}-local.2"
 
 
 def test_edited_pack_version_flows_into_upload_and_report_responses():
@@ -464,9 +471,9 @@ def test_edited_pack_version_flows_into_upload_and_report_responses():
         )
         parsed = client.post("/api/v1/tasks/parse", json={"analysis_goal": "看看销售"})
 
-    assert upload.json()["context_pack_version"] == "1.0.0-local.1"
-    assert report.json()["report"]["context_pack_version"] == "1.0.0-local.1"
-    assert parsed.json()["task"]["context_pack_version"] == "1.0.0-local.1"
+    assert upload.json()["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
+    assert report.json()["report"]["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
+    assert parsed.json()["task"]["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
 
 
 def test_legacy_p1_database_gains_context_pack_table_and_seed(tmp_path: Path, monkeypatch):
@@ -481,7 +488,7 @@ def test_legacy_p1_database_gains_context_pack_table_and_seed(tmp_path: Path, mo
         pack = client.get("/api/v1/context-pack").json()
         reports = client.get("/api/v1/reports").json()
 
-    assert (pack["version"], pack["revision"]) == ("1.0.0", 0)
+    assert (pack["version"], pack["revision"]) == (FACTORY_VERSION, 0)
     assert reports["total"] == 1
 
 
@@ -592,7 +599,7 @@ def test_rerun_keeps_one_pack_snapshot_when_the_pack_is_saved_mid_run(monkeypatc
         )
 
     assert response.status_code == 200
-    assert response.json()["report"]["context_pack_version"] == "1.0.0"
+    assert response.json()["report"]["context_pack_version"] == FACTORY_VERSION
     assert materialized_columns and all("channel" in columns for columns in materialized_columns)
 
 

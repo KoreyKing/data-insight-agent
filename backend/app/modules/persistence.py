@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.modules.context_pack import (
     builtin_pack_name,
     effective_version,
     load_default_context_pack,
+    matches_factory,
     stamped_payload,
 )
 from app.modules.field_mapping import build_field_profile
@@ -221,13 +222,36 @@ def reset_context_pack(session: Session) -> ContextPackRecord:
     return save_context_pack(session, load_default_context_pack())
 
 
+def follow_factory_if_unedited(session: Session, record: ContextPackRecord) -> bool:
+    """未编辑的活动包（revision 0）跟随当前出厂内容与版本（§6.4 v0.18）；保存过的不动。"""
+    if record.revision != 0:
+        return False
+    builtin = load_default_context_pack()
+    factory_version = str(builtin["meta"]["version"])
+    if record.base_version == factory_version and matches_factory(record.payload_json):
+        return False
+    result = session.execute(
+        update(ContextPackRecord)
+        .where(ContextPackRecord.id == record.id, ContextPackRecord.revision == 0)
+        .values(
+            base_version=factory_version,
+            payload_json=stamped_payload(builtin, effective_version(factory_version, 0)),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    session.expire(record)
+    return bool(result.rowcount)
+
+
 def ensure_seeded_context_pack() -> None:
-    """启动期种子；失败只记录日志不阻断启动（运行期读失败会回落内置包）。"""
+    """启动期种子与出厂跟随；失败只记录日志不阻断启动（运行期读失败会回落内置包）。"""
     from app.db.engine import SessionLocal, get_engine
 
     try:
         with SessionLocal(bind=get_engine()) as session:
-            seed_context_pack(session)
+            record = seed_context_pack(session)
+            if follow_factory_if_unedited(session, record):
+                logger.info("业务口径未编辑过，已跟随出厂口径更新到 %s。", record.base_version)
             session.commit()
     except SQLAlchemyError as exc:
         logger.warning(

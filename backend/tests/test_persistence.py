@@ -13,6 +13,9 @@ from sqlalchemy import create_engine, func, inspect, select
 from app.db.engine import SessionLocal, get_engine, init_db, normalize_database_url
 from app.db.models import Dataset, Report
 from app.main import app
+from app.modules.context_pack import builtin_base_version
+
+FACTORY_VERSION = builtin_base_version()
 
 
 def sqlite_url(path: Path) -> str:
@@ -287,7 +290,7 @@ def test_run_report_persists_sample_dataset_and_report(monkeypatch, tmp_path: Pa
         assert stored.summary == payload["report"]["summary"]
         assert stored.model_used == "not_configured"
         assert stored.context_pack_name == "Retail Operations"
-        assert stored.context_pack_version == "1.0.0"
+        assert stored.context_pack_version == FACTORY_VERSION
         assert stored.structured_task_json["analysis_goal"] == "帮我生成周度经营复盘"
         assert stored.metrics_json == stored.structured_task_json["metrics"]
         assert stored.dimensions_json == stored.structured_task_json["dimensions"]

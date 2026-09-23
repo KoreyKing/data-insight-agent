@@ -8,10 +8,13 @@ import pytest
 from app.config import Settings
 from app.llm.client import build_default_headers
 from app.llm.providers import resolve_provider
+from app.modules.context_pack import builtin_base_version
 from app.modules.file_ingestion import build_preview, build_schema_summary
 from app.modules.reporting import DEFAULT_DIMENSIONS, DEFAULT_METRICS
 from app.modules.schemas import DataSourceRef, TableData
 from app.modules.task_parser import parse_analysis_goal, sanitize_error
+
+FACTORY_VERSION = builtin_base_version()
 
 
 class FakeLLMClient:
@@ -89,7 +92,7 @@ def test_parse_analysis_goal_returns_default_template_without_llm_configuration(
     assert result["task"]["metrics"] == DEFAULT_METRICS
     assert result["task"]["dimensions"] == DEFAULT_DIMENSIONS
     assert result["task"]["context_pack_name"] == "Retail Operations"
-    assert result["task"]["context_pack_version"] == "1.0.0"
+    assert result["task"]["context_pack_version"] == FACTORY_VERSION
     assert result["warnings"][0]["code"] == "LLM_NOT_CONFIGURED"
 
 

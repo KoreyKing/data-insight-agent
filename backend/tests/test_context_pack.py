@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 
 import pandas as pd
@@ -20,7 +21,7 @@ def test_default_context_pack_loads_with_required_runtime_contract():
     pack = load_default_context_pack()
 
     assert pack["meta"]["name"] == "Retail Operations"
-    assert pack["meta"]["version"] == "1.0.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", pack["meta"]["version"])
     assert {metric["name"] for metric in pack["metrics"]} >= {
         "销售额",
         "订单数",

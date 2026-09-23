@@ -491,10 +491,12 @@ def core_kpis(frame: pd.DataFrame) -> dict[str, float | int]:
 
 
 def refund_rate(frame: pd.DataFrame) -> float:
-    if frame.empty:
+    # 与产品报告口径一致：分母只数三种可识别的订单状态
+    counted = frame[frame["order_status"].isin(["completed", "partial_refund", "refunded"])]
+    if counted.empty:
         return 0.0
-    refunds = frame["order_status"].isin(["refunded", "partial_refund"]).sum()
-    return float(refunds / len(frame.index) * 100)
+    refunds = counted["order_status"].isin(["refunded", "partial_refund"]).sum()
+    return float(refunds / len(counted.index) * 100)
 
 
 def sales_drop(previous: pd.DataFrame, current: pd.DataFrame, store_id: str) -> float:

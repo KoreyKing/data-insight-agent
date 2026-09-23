@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.modules.context_pack import load_default_context_pack
+from app.modules.context_pack import builtin_base_version, load_default_context_pack
 from app.modules.file_ingestion import load_table_from_path
 from app.modules.history_context import build_history_context
 from app.modules.reporting import generate_traceable_report
@@ -38,6 +38,8 @@ from eval.runner import (
 from eval.runner import (
     main as eval_main,
 )
+
+FACTORY_VERSION = builtin_base_version()
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PERIOD2_FIXTURE = BACKEND_DIR / "eval" / "fixtures" / "retail_sales_orders_period2.csv"
@@ -697,15 +699,15 @@ def test_capture_alias_edit_changes_recognition_and_version_then_resets():
         restored = client.post("/api/v1/context-pack/reset").json()
         after_reset_sample = client.get("/api/v1/sample-dataset").json()
 
-    assert factory["version"] == "1.0.0"
+    assert factory["version"] == FACTORY_VERSION
     assert "channel" in recognized_canonical_fields(factory["payload"])
 
-    assert edited["version"] == "1.0.0-local.1"
-    assert after_edit_sample["context_pack_version"] == "1.0.0-local.1"
+    assert edited["version"] == f"{FACTORY_VERSION}-local.1"
+    assert after_edit_sample["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
     assert "channel" not in recognized_canonical_fields(edited["payload"])
 
-    assert restored["version"] == "1.0.0-local.2"
-    assert after_reset_sample["context_pack_version"] == "1.0.0-local.2"
+    assert restored["version"] == f"{FACTORY_VERSION}-local.2"
+    assert after_reset_sample["context_pack_version"] == f"{FACTORY_VERSION}-local.2"
     assert "channel" in recognized_canonical_fields(restored["payload"])
 
 
@@ -993,12 +995,12 @@ def test_capture_flow_edits_runs_restores_and_passes_every_gate(monkeypatch):
         key: item["details"] for key, item in gates.items() if not item["passed"]
     }
     assert output["evaluation"]["passed"] is True
-    assert output["report"]["context_pack_version"] == "1.0.0-local.1"
-    assert output["capture"]["edited_version"] == "1.0.0-local.1"
-    assert output["capture"]["post_reset"]["version"] == "1.0.0-local.2"
+    assert output["report"]["context_pack_version"] == f"{FACTORY_VERSION}-local.1"
+    assert output["capture"]["edited_version"] == f"{FACTORY_VERSION}-local.1"
+    assert output["capture"]["post_reset"]["version"] == f"{FACTORY_VERSION}-local.2"
     assert "channel" not in output["capture"]["report"]["recognized"]
     assert "channel" in output["capture"]["pre_edit"]["recognized"]
-    assert restored["meta"]["version"] == "1.0.0-local.2"
+    assert restored["meta"]["version"] == f"{FACTORY_VERSION}-local.2"
     assert is_modified(restored) is False
 
 
@@ -1019,7 +1021,7 @@ def test_capture_flow_restores_the_factory_pack_when_the_run_raises(monkeypatch)
             )
         restored = load_active_context_pack()
 
-    assert restored["meta"]["version"] == "1.0.0-local.2"
+    assert restored["meta"]["version"] == f"{FACTORY_VERSION}-local.2"
     assert is_modified(restored) is False
 
 
@@ -1039,7 +1041,7 @@ def test_run_suite_records_factory_identity_before_questions_edit_the_pack(monke
         only=None,
     )
 
-    assert suite["context_pack"]["version"] == "1.0.0"
+    assert suite["context_pack"]["version"] == FACTORY_VERSION
 
 
 def test_capture_control_turns_red_only_for_the_right_reasons():
@@ -1109,7 +1111,7 @@ def test_capture_flow_hands_one_edited_snapshot_to_the_run_and_the_replay(monkey
         )
 
     assert seen["run"] is not None and seen["run"] is seen["evaluate"]
-    assert seen["run"]["meta"]["version"] == "1.0.0-local.1"
+    assert seen["run"]["meta"]["version"] == f"{FACTORY_VERSION}-local.1"
 
 
 def test_run_and_rerun_flows_resolve_the_active_pack_once(monkeypatch):

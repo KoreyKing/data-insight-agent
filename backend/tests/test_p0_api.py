@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 from app.main import app
+from app.modules.context_pack import builtin_base_version
+
+FACTORY_VERSION = builtin_base_version()
 
 
 def valid_csv_bytes() -> bytes:
@@ -30,7 +33,7 @@ def test_sample_dataset_returns_preview_and_valid_profile():
     payload = response.json()
     assert payload["data_source_ref"]["type"] == "csv"
     assert payload["context_pack_name"] == "Retail Operations"
-    assert payload["context_pack_version"] == "1.0.0"
+    assert payload["context_pack_version"] == FACTORY_VERSION
     assert payload["field_profile"]["is_valid"] is True
     assert 8000 <= payload["row_count"] <= 10000
 
@@ -54,7 +57,7 @@ def test_upload_csv_returns_session_preview_and_profile(monkeypatch, tmp_path: P
     payload = response.json()
     assert payload["session_id"]
     assert payload["context_pack_name"] == "Retail Operations"
-    assert payload["context_pack_version"] == "1.0.0"
+    assert payload["context_pack_version"] == FACTORY_VERSION
     assert payload["field_profile"]["is_valid"] is True
     assert payload["preview"]["head"][0]["门店"] == "上海徐汇旗舰店"
     assert payload["data_source_ref"]["location"] == "orders.csv"
@@ -211,7 +214,7 @@ def test_parse_task_uses_default_template_without_llm_configuration(monkeypatch)
     payload = response.json()
     assert payload["task"]["task_title"] == "周度零售经营复盘"
     assert payload["task"]["context_pack_name"] == "Retail Operations"
-    assert payload["task"]["context_pack_version"] == "1.0.0"
+    assert payload["task"]["context_pack_version"] == FACTORY_VERSION
     assert payload["task"]["data_source_ref"]["id"] == "sample-retail"
     assert payload["warnings"] == [
         {

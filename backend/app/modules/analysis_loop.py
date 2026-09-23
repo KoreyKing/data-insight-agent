@@ -43,7 +43,7 @@ def run_analysis_loop(
     limits = execution_limits(task)
     started = time.monotonic()
     analysis_steps: list[dict[str, Any]] = []
-    warnings: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = list(handle.warnings)
     summary = ""
     token_used = 0
     loop_rounds = 0

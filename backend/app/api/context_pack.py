@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.history_serializers import serialize_datetime
 from app.db.engine import get_db
 from app.db.models import ContextPackRecord
-from app.modules.context_pack import effective_version, load_default_context_pack
+from app.modules.context_pack import effective_version, matches_factory
 from app.modules.context_pack_validation import validate_context_pack_edit
 from app.modules.persistence import (
     reset_context_pack,
@@ -69,17 +69,7 @@ def serialize_context_pack(record: ContextPackRecord) -> dict[str, Any]:
 
 def is_modified(payload: Any) -> bool:
     """与内置内容比较（忽略服务端计算的 meta.version）：reset 后 revision 递增但仍为 false。"""
-    return comparable(payload) != comparable(load_default_context_pack())
-
-
-def comparable(payload: Any) -> Any:
-    if not isinstance(payload, dict):
-        return payload
-    without_version = {key: value for key, value in payload.items() if key != "meta"}
-    meta = payload.get("meta")
-    if isinstance(meta, dict):
-        without_version["meta"] = {key: value for key, value in meta.items() if key != "version"}
-    return without_version
+    return not matches_factory(payload)
 
 
 def commit(session: Session, record: ContextPackRecord) -> ContextPackRecord:

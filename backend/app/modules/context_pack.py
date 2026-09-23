@@ -45,6 +45,22 @@ def effective_version(base_version: str, revision: int) -> str:
     return base_version if revision <= 0 else f"{base_version}-local.{revision}"
 
 
+def comparable_payload(payload: Any) -> Any:
+    """比较口径内容时去掉服务端计算的 meta.version。"""
+    if not isinstance(payload, dict):
+        return payload
+    without_version = {key: value for key, value in payload.items() if key != "meta"}
+    meta = payload.get("meta")
+    if isinstance(meta, dict):
+        without_version["meta"] = {key: value for key, value in meta.items() if key != "version"}
+    return without_version
+
+
+def matches_factory(payload: Any) -> bool:
+    """内容是否等于当前内置出厂包（忽略 meta.version）。"""
+    return comparable_payload(payload) == comparable_payload(load_default_context_pack())
+
+
 def stamped_payload(payload: dict[str, Any], version: str) -> dict[str, Any]:
     """把有效版本串写入 payload.meta.version（服务端计算，忽略入参版本）。"""
     stamped = deepcopy(payload)
