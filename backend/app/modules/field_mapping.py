@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from app.modules.context_pack import build_field_aliases, load_default_context_pack
+from app.modules.context_pack import build_field_aliases, load_active_context_pack
 from app.modules.schemas import SchemaSummary
 
 
@@ -66,12 +66,20 @@ FALLBACK_ALIAS_LOOKUP: dict[str, str] = {
 
 
 def build_alias_lookup(context_pack: dict[str, Any] | None = None) -> dict[str, str]:
-    pack = context_pack or load_default_context_pack()
+    """别名权威（architecture.md §6.4）：活动包列 aliases 是唯一来源。
+
+    内置回退表只兜底「活动包不含该 canonical 列」的情况——否则删除别名不会改变识别结果，
+    「编辑口径 → 产出变化」的因果链就不成立（§7 capture 断言依赖）。
+    """
+    pack = context_pack if context_pack is not None else load_active_context_pack()
+    pack_aliases = build_field_aliases(pack)
     lookup: dict[str, str] = {}
-    for canonical, aliases in build_field_aliases(pack).items():
+    for canonical, aliases in pack_aliases.items():
         for alias in aliases:
             lookup[normalize_label(alias)] = canonical
     for alias, canonical in FALLBACK_ALIAS_LOOKUP.items():
+        if canonical in pack_aliases:
+            continue
         lookup.setdefault(alias, canonical)
     return lookup
 
@@ -82,7 +90,8 @@ def build_field_profile(
 ) -> FieldProfile:
     mappings: dict[str, FieldMapping] = {}
     canonical_found: set[str] = set()
-    alias_lookup = build_alias_lookup(context_pack)
+    pack = context_pack if context_pack is not None else load_active_context_pack()
+    alias_lookup = build_alias_lookup(pack)
     fallback_aliases = set(FALLBACK_ALIAS_LOOKUP)
 
     for column in schema_summary.columns:

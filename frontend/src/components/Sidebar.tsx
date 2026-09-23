@@ -1,8 +1,57 @@
-// Left rail: current session, read-only history, data sources, model status.
-import type { HistoryReportListItem, ModelStatus } from '../api/client'
+// Left rail: current session, read-only history, data sources, business metrics, model status.
+import type { ContextPackState, HistoryReportListItem, ModelStatus } from '../api/client'
 import type { AppMode } from '../lib/state'
+import { versionLabel } from '../lib/context-pack'
 import { formatHistoryDate, historySummary, statusLabel } from '../lib/history'
+import { friendlyContextPack } from '../lib/view'
 import { Ico } from './icons'
+
+function PackCard({
+  pack,
+  unavailable,
+  onOpen,
+}: {
+  pack: ContextPackState | null
+  unavailable: boolean
+  onOpen: () => void
+}) {
+  const state = pack ? (pack.is_modified ? 'modified' : 'factory') : unavailable ? 'unknown' : 'loading'
+  const label =
+    state === 'modified'
+      ? '已修改'
+      : state === 'factory'
+        ? pack && pack.revision > 0
+          ? '已恢复默认'
+          : '出厂默认'
+        : state === 'unknown'
+          ? '状态未知'
+          : '读取中'
+  const dotColor =
+    state === 'modified' ? 'var(--amber-500)' : state === 'factory' ? 'var(--forest-500)' : 'var(--ink-4)'
+  return (
+    <div className="model-card pack-card">
+      <div className="model-hd">
+        <span className="model-key">业务口径</span>
+        <span className="model-st" style={{ color: state === 'modified' ? 'var(--amber-500)' : 'var(--ink-3)' }}>
+          <span className="model-dot" style={{ background: dotColor, boxShadow: `0 0 0 3px ${dotColor}22` }} />
+          {label}
+        </span>
+      </div>
+      <div className="pack-card-name">{pack ? friendlyContextPack(pack.name) : '零售经营分析'}</div>
+      <div className="model-host">
+        {pack
+          ? versionLabel(pack).replace('口径版本 ', '')
+          : unavailable
+            ? '暂时无法读取口径，恢复后可编辑'
+            : '正在读取口径版本…'}
+      </div>
+      <button className="model-foot-link" onClick={onOpen}>
+        <Ico.Sparkle size={12} /> 编辑业务口径
+        <span className="model-foot-arrow">→</span>
+      </button>
+    </div>
+  )
+}
 
 function ModelStatusCard({
   model,
@@ -121,11 +170,14 @@ type SidebarProps = {
   model: ModelStatus | null
   onNewSession: () => void
   onSelectCurrent: () => void
+  onSelectTasks: () => void
   onSelectHistory: () => void
   onSelectDatasets: () => void
   onOpenHistory: (reportId: string) => void
   hasSession: boolean
   activeMode: AppMode
+  tasksTotal: number
+  tasksLoading: boolean
   historyReports: HistoryReportListItem[]
   historyTotal: number
   historyLoading: boolean
@@ -133,17 +185,23 @@ type SidebarProps = {
   datasetsTotal: number
   datasetsLoading: boolean
   onOpenModelConfig: () => void
+  pack: ContextPackState | null
+  packUnavailable: boolean
+  onOpenContextPack: () => void
 }
 
 export default function Sidebar({
   model,
   onNewSession,
   onSelectCurrent,
+  onSelectTasks,
   onSelectHistory,
   onSelectDatasets,
   onOpenHistory,
   hasSession,
   activeMode,
+  tasksTotal,
+  tasksLoading,
   historyReports,
   historyTotal,
   historyLoading,
@@ -151,6 +209,9 @@ export default function Sidebar({
   datasetsTotal,
   datasetsLoading,
   onOpenModelConfig,
+  pack,
+  packUnavailable,
+  onOpenContextPack,
 }: SidebarProps) {
   const recentReports = historyReports.slice(0, 4)
   return (
@@ -185,6 +246,16 @@ export default function Sidebar({
             </span>
             <span className="grow">当前会话</span>
             {hasSession ? <span className="meta">进行中</span> : null}
+          </button>
+          <button
+            className={`rail-item ${activeMode === 'tasks' ? 'active' : ''}`}
+            onClick={onSelectTasks}
+          >
+            <span className="ic">
+              <Ico.Template />
+            </span>
+            <span className="grow">分析任务</span>
+            <span className="meta">{tasksLoading ? '加载' : tasksTotal}</span>
           </button>
           <button
             className={`rail-item ${activeMode === 'history' ? 'active' : ''}`}
@@ -242,6 +313,7 @@ export default function Sidebar({
       <div style={{ flex: 1, minHeight: 0 }} />
 
       <div className="rail-foot">
+        <PackCard pack={pack} unavailable={packUnavailable} onOpen={onOpenContextPack} />
         <ModelStatusCard model={model} onOpenModelConfig={onOpenModelConfig} />
       </div>
     </aside>

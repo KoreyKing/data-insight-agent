@@ -6,16 +6,20 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
+from app.api.request_validation import RequestBodyInvalid, request_body_invalid_handler
 from app.db.engine import init_db
+from app.modules.persistence import ensure_seeded_context_pack
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
+    ensure_seeded_context_pack()
     yield
 
 
 app = FastAPI(title="Data Insight Agent", version="0.1.0", lifespan=lifespan)
+app.add_exception_handler(RequestBodyInvalid, request_body_invalid_handler)
 app.include_router(api_router)
 
 

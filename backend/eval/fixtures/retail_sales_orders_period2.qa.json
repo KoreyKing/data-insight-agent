@@ -1,0 +1,77 @@
+{
+  "schema_version": 2,
+  "fixture_id": "period2",
+  "seed": 20260526,
+  "extension_seed": 20260527,
+  "order_count_rule": [
+    "completed",
+    "partial_refund"
+  ],
+  "row_count": 10860,
+  "date_range": {
+    "start": "2026-03-23",
+    "end": "2026-05-24"
+  },
+  "windows": {
+    "current": {
+      "start": "2026-05-18",
+      "end": "2026-05-24"
+    },
+    "previous": {
+      "start": "2026-05-11",
+      "end": "2026-05-17"
+    }
+  },
+  "core_kpis": {
+    "current": {
+      "sales_amount": 327985.38,
+      "order_count": 1290,
+      "average_order_value": 254.25,
+      "refund_rate": 7.09
+    },
+    "previous": {
+      "sales_amount": 390037.19,
+      "order_count": 1288,
+      "average_order_value": 302.82,
+      "refund_rate": 7.01
+    }
+  },
+  "anomaly_entities": [
+    {
+      "id": "sh001",
+      "keywords": [
+        "SH001",
+        "徐汇"
+      ]
+    },
+    {
+      "id": "kids",
+      "keywords": [
+        "童装"
+      ]
+    },
+    {
+      "id": "douyin",
+      "keywords": [
+        "抖音"
+      ]
+    }
+  ],
+  "checks": {
+    "row_count_in_range": true,
+    "required_columns_present": true,
+    "sh001_sales_drop": true,
+    "kids_refund_spike": true,
+    "douyin_aov_drop_with_order_lift": true,
+    "weekend_effect": true,
+    "returning_customer_share_lift": true
+  },
+  "metrics": {
+    "sh001_sales_delta_pct": -52.66,
+    "kids_current_refund_rate": 13.61,
+    "douyin_aov_delta_pct": -26.4,
+    "douyin_order_delta_pct": 74.4,
+    "weekend_weekday_order_ratio": 1.64,
+    "returning_customer_share_lift_pp": 15.16
+  }
+}

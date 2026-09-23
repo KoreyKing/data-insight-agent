@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -28,8 +29,13 @@ class DatasetMaterializationError(ValueError):
         super().__init__(message)
 
 
-def materialize_table_to_sqlite(table: TableData) -> DatasetHandle:
-    dataframe = canonicalize_for_query(table)
+def materialize_table_to_sqlite(
+    table: TableData,
+    *,
+    context_pack: dict[str, Any] | None = None,
+) -> DatasetHandle:
+    """物化为只读分析表 sales_orders；传入运行快照时按快照识别字段（§6.4 单次运行同源）。"""
+    dataframe = canonicalize_for_query(table, context_pack=context_pack)
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     dataframe.to_sql(CANONICAL_TABLE_NAME, connection, if_exists="replace", index=False)
@@ -43,8 +49,12 @@ def materialize_table_to_sqlite(table: TableData) -> DatasetHandle:
     )
 
 
-def canonicalize_for_query(table: TableData) -> pd.DataFrame:
-    profile = build_field_profile(table.schema_summary)
+def canonicalize_for_query(
+    table: TableData,
+    *,
+    context_pack: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    profile = build_field_profile(table.schema_summary, context_pack)
     if not profile.is_valid:
         missing = " / ".join(profile.missing_key_fields)
         raise DatasetMaterializationError("CSV_KEY_FIELD_MISSING", f"缺少关键字段：{missing}")

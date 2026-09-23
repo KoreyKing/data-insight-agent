@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.config import normalize_optional_string
 from app.llm.providers import resolve_provider
+from app.timestamps import utc_now_iso
 
 LLM_CONFIG_PATH = (
     Path("/app/data/llm_config.json")
@@ -101,8 +101,8 @@ def normalize_config_payload(
         "enabled": enabled,
     }
     if include_updated_at:
-        config["updated_at"] = normalize_optional_string(as_string(payload.get("updated_at"))) or (
-            datetime.now(UTC).isoformat(timespec="seconds")
+        config["updated_at"] = (
+            normalize_optional_string(as_string(payload.get("updated_at"))) or utc_now_iso()
         )
     return config
 

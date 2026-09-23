@@ -10,7 +10,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.modules.context_pack import context_pack_identity
+from app.modules.context_pack import context_pack_identity, load_active_context_pack
 from app.modules.field_mapping import build_field_profile
 from app.modules.schemas import (
     ColumnSummary,
@@ -329,11 +329,17 @@ def normalize_value(value: Any) -> Any:
     return value
 
 
-def table_to_response(table: TableData) -> dict[str, Any]:
-    profile = build_field_profile(table.schema_summary)
+def table_to_response(
+    table: TableData,
+    context_pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    pack = context_pack if context_pack is not None else load_active_context_pack()
+    profile = build_field_profile(table.schema_summary, pack)
+    data_source_ref = asdict(table.data_source_ref)
+    data_source_ref["location"] = table.data_source_ref.name
     return {
-        **context_pack_identity(),
-        "data_source_ref": asdict(table.data_source_ref),
+        **context_pack_identity(pack),
+        "data_source_ref": data_source_ref,
         "row_count": table.row_count,
         "column_count": table.column_count,
         "schema_summary": asdict(table.schema_summary),

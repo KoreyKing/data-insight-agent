@@ -107,3 +107,57 @@ def test_dedupes_warnings_and_adds_context_pack_identity():
 
     assert report["warnings"] == [{"code": "LOOP_BUDGET_EXCEEDED", "message": "a"}]
     assert report["context_pack_name"] == "Retail Operations"
+
+
+def history_context_fixture() -> dict:
+    return {
+        "previous_report_id": "r-prev",
+        "previous_ran_at": "2026-09-01T10:00:00+00:00",
+        "previous_status": "completed",
+        "previous_time_range": {"current_start": "2026-05-11", "current_end": "2026-05-17"},
+        "last_run_summary": "上期摘要",
+        "baseline_values": {"销售额": 100.0, "退款率": 4.5},
+    }
+
+
+def test_compose_report_attaches_previous_comparison_when_history_context_given():
+    report = compose_report(
+        status="completed",
+        title="t",
+        analysis_goal="",
+        summary="",
+        kpis=[
+            {"name": "销售额", "current": 110.0, "previous": 100.0, "unit": "元"},
+            {"name": "退款率", "current": 5.0, "previous": 4.0, "unit": "%"},
+        ],
+        findings=[],
+        warnings=[],
+        metadata={"time_range": {"current_start": "2026-05-18", "current_end": "2026-05-24"}},
+        history_context=history_context_fixture(),
+    )
+
+    comparison = report["previous_comparison"]
+    assert comparison["previous_report_id"] == "r-prev"
+    assert comparison["previous_status"] == "completed"
+    assert comparison["same_period"] is False
+    assert comparison["summary_note"] == "上期摘要"
+    # 内置包阈值 significant 10 / critical 30：+10% 恰好为 significant；率值只给 pp 且不着色
+    assert [
+        (entry["name"], entry["delta_value"], entry["delta_unit"], entry["severity"])
+        for entry in comparison["baseline"]
+    ] == [("销售额", 10.0, "%", "significant"), ("退款率", 0.5, "pp", None)]
+
+
+def test_compose_report_omits_previous_comparison_without_history_context():
+    report = compose_report(
+        status="completed",
+        title="t",
+        analysis_goal="",
+        summary="",
+        kpis=[{"name": "销售额", "current": 110.0, "previous": 100.0, "unit": "元"}],
+        findings=[],
+        warnings=[],
+        metadata={},
+    )
+
+    assert "previous_comparison" not in report

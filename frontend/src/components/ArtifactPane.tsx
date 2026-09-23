@@ -1,10 +1,21 @@
 import { useEffect, useState, type Dispatch } from 'react'
 import type { Action, AppState } from '../lib/state'
 import { taskView } from '../lib/state'
-import type { DatasetPayload, Finding, HistoryDatasetDetail, KPI, ReportPayload, StructuredTask } from '../api/client'
-import { formatHistoryDate, historySummary } from '../lib/history'
+import type {
+  DatasetPayload,
+  Finding,
+  HistoryDatasetDetail,
+  KPI,
+  PreviousComparison,
+  ReportPayload,
+  StructuredTask,
+} from '../api/client'
+import { formatClock, formatDateTime, formatHistoryDate, historySummary } from '../lib/history'
 import {
+  comparisonDeltaClass,
   deriveRole,
+  formatComparisonDelta,
+  formatComparisonValue,
   friendlyContextPack,
   highlightSQL,
   kpiDeltaText,
@@ -19,6 +30,9 @@ import {
 import { Ico } from './icons'
 import FindingChart from './charts/FindingChart'
 import Sparkline from './charts/Sparkline'
+import ReportFeedback from './ReportFeedback'
+import SaveTaskDialog from './SaveTaskDialog'
+import TaskPane from './TaskPane'
 
 function ProfileStat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
@@ -169,7 +183,8 @@ function DatasetProfile({
           <div className="hstack" style={{ gap: 8 }}>
             <h4 style={{ margin: 0 }}>分析场景 · 字段映射</h4>
             <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-              已套用<b style={{ color: 'var(--forest-700)' }}>「{friendlyContextPack('Retail Operations')}」</b>口径 · {mappedCount}/
+              已套用<b style={{ color: 'var(--forest-700)' }}>「{friendlyContextPack(dataset.context_pack_name ?? 'Retail Operations')}」</b>口径
+              {dataset.context_pack_version ? ` ${dataset.context_pack_version}` : ''} · {mappedCount}/
               {columns.length} 命中
             </span>
           </div>
@@ -445,7 +460,7 @@ function InsightEvidence({ finding }: { finding: Finding }) {
               </div>
               <div>
                 <div className="k">运行时间</div>
-                <div className="v">{ev.ran_at}</div>
+                <div className="v">{formatDateTime(ev.ran_at)}</div>
               </div>
               {typeof ev.iteration === 'number' && (
                 <div>
@@ -502,7 +517,7 @@ function InsightEvidence({ finding }: { finding: Finding }) {
               )}
               <div>
                 <div className="k">运行时间</div>
-                <div className="v">{ev.ran_at}</div>
+                <div className="v">{formatDateTime(ev.ran_at)}</div>
               </div>
               {typeof ev.exec_ms === 'number' && (
                 <div>
@@ -577,7 +592,7 @@ function InsightCard({
           </span>
           {ev.ran_at && (
             <span>
-              <Ico.Clock size={11} /> {ev.ran_at.slice(11, 19) || ev.ran_at}
+              <Ico.Clock size={11} /> {formatClock(ev.ran_at)}
             </span>
           )}
           {typeof ev.iteration === 'number' && (
@@ -624,7 +639,7 @@ function KPIStrip({ kpis }: { kpis: KPI[] }) {
             <span className={`delta ${cls}`}>
               <span className="arrow">{up ? <Ico.ArrowUp size={9} /> : <Ico.ArrowDown size={9} />}</span>
               <span>{kpiDeltaText(k)}</span>
-              <span className="vs">{k.delta_unit === 'pp' ? '环比' : '环比'}</span>
+              <span className="vs">环比</span>
             </span>
             {k.spark && k.spark.length > 1 && (
               <div className="spark">
@@ -638,8 +653,105 @@ function KPIStrip({ kpis }: { kpis: KPI[] }) {
   )
 }
 
-function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Dispatch<Action> }) {
+function PreviousComparisonSection({
+  comparison,
+  onOpenPrevious,
+}: {
+  comparison: PreviousComparison
+  onOpenPrevious: (reportId: string) => void
+}) {
+  const [noteOpen, setNoteOpen] = useState(false)
+  const title = comparison.same_period ? '与上次运行对比（相同时间窗）' : '对比上期'
+  return (
+    <>
+      <div className="rep-section-hd">
+        <span className="nb">§ 01</span>
+        <h3>{title}</h3>
+        <span className="line" />
+        <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+          跨报告对比
+        </span>
+      </div>
+      <section className="cmp" aria-label={title}>
+        <div className="cmp-hd">
+          <div className="cmp-meta">
+            <span>
+              <Ico.Clock size={11} /> 上期报告生成于 <b>{formatHistoryDate(comparison.previous_ran_at)}</b>
+            </span>
+            {comparison.previous_status === 'partial' && (
+              <span className="cmp-flag">
+                <Ico.Warn size={11} /> 上期分析未完整
+              </span>
+            )}
+            {comparison.same_period && (
+              <span className="cmp-flag muted">时间窗与上次运行相同或重叠，不是周期环比</span>
+            )}
+          </div>
+          <button
+            className="btn ghost sm"
+            onClick={() => onOpenPrevious(comparison.previous_report_id)}
+            title="打开上期报告的只读详情"
+          >
+            <Ico.Doc size={11} /> 查看上期报告
+          </button>
+        </div>
+
+        {comparison.baseline.length === 0 ? (
+          <p className="cmp-empty">上期无可对比指标。</p>
+        ) : (
+          <table className="cmp-table">
+            <thead>
+              <tr>
+                <th>指标</th>
+                <th className="num">上期值</th>
+                <th className="num">本期值</th>
+                <th className="num">变化</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.baseline.map((entry) => (
+                <tr key={entry.name}>
+                  <td>{entry.name}</td>
+                  <td className="num">{formatComparisonValue(entry.previous_value, entry.unit)}</td>
+                  <td className="num">{formatComparisonValue(entry.current_value, entry.unit)}</td>
+                  <td className={`num cmp-delta ${comparisonDeltaClass(entry)}`}>
+                    {formatComparisonDelta(entry)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <div className="cmp-note">
+          <button className="btn subtle xs" onClick={() => setNoteOpen((open) => !open)}>
+            <Ico.Doc size={11} /> {noteOpen ? '收起' : '展开'}上期摘要
+          </button>
+          {noteOpen && <blockquote>{comparison.summary_note || '上期报告没有执行摘要。'}</blockquote>}
+        </div>
+        <p className="cmp-foot">
+          对比值取自上期报告存档的核心指标，由系统按指标名对齐计算，不由模型生成；率值指标按百分点（pp）呈现且不参与阈值着色。
+        </p>
+      </section>
+    </>
+  )
+}
+
+function ReportDoc({
+  report,
+  reportId,
+  dispatch,
+  onOpenHistory,
+}: {
+  report: ReportPayload
+  reportId: string | null
+  dispatch: Dispatch<Action>
+  onOpenHistory: (reportId: string) => void
+}) {
   const info = reportRunInfo(report)
+  const comparison = report.previous_comparison ?? null
+  // 含对比段落时其占 § 01，后续段落顺延。
+  const sectionNo = (index: number) => `§ ${String(comparison ? index + 1 : index).padStart(2, '0')}`
   const recommendations = report.findings.filter((f) => (f.type || '').toLowerCase() === 'recommendation')
   const sqlCount = report.findings.filter((f) => f.evidence?.sql).length
   const chartCount = report.findings.filter((f) => f.chart).length
@@ -660,22 +772,27 @@ function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Disp
           数据源 <b className="mono">{info.dataSource}</b>
         </span>
         <span>{info.rowCount.toLocaleString('zh-CN')} 行</span>
-        <span className="pill">
+        <span className="pill" title="生成本报告时使用的业务口径版本">
           <Ico.Sparkle size={10} /> {friendlyContextPack(report.context_pack_name)}
+          {report.context_pack_version ? ` · 口径 ${report.context_pack_version}` : ''}
         </span>
         <span>
-          分析步骤 {report.metadata.iterations_used ?? 0} 步 · {info.tokenUsed.toLocaleString('zh-CN')} tokens
+          {info.analysisCounts} · {info.tokenUsed.toLocaleString('zh-CN')} tokens
         </span>
       </div>
 
       {report.summary && <p className="rep-lede">{report.summary}</p>}
 
+      {comparison && (
+        <PreviousComparisonSection comparison={comparison} onOpenPrevious={onOpenHistory} />
+      )}
+
       <div className="rep-section-hd">
-        <span className="nb">§ 01</span>
+        <span className="nb">{sectionNo(1)}</span>
         <h3>核心指标</h3>
         <span className="line" />
-        <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-          对比上一周期
+        <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }} title="本次上传文件内相邻周期的对比">
+          本文件内环比
         </span>
       </div>
       {report.kpis.length > 0 ? (
@@ -685,7 +802,7 @@ function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Disp
       )}
 
       <div className="rep-section-hd">
-        <span className="nb">§ 02</span>
+        <span className="nb">{sectionNo(2)}</span>
         <h3>关键洞察</h3>
         <span className="line" />
         <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
@@ -701,7 +818,7 @@ function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Disp
       {recommendations.length > 0 && (
         <>
           <div className="rep-section-hd">
-            <span className="nb">§ 03</span>
+            <span className="nb">{sectionNo(3)}</span>
             <h3>下一步建议</h3>
             <span className="line" />
           </div>
@@ -737,8 +854,8 @@ function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Disp
             <span className="v">{info.model}</span>
           </div>
           <div className="meta-row">
-            <span className="k">分析步骤</span>
-            <span className="v">{report.metadata.iterations_used ?? 0} 步</span>
+            <span className="k">分析过程</span>
+            <span className="v">{info.analysisCounts}</span>
           </div>
         </div>
         <div>
@@ -759,6 +876,9 @@ function ReportDoc({ report, dispatch }: { report: ReportPayload; dispatch: Disp
           </div>
         </div>
       </div>
+
+      {/* 只有已落库的报告才能投票；key 保证切换报告时反馈状态随之重建。 */}
+      {reportId && <ReportFeedback key={reportId} reportId={reportId} />}
     </div>
   )
 }
@@ -878,7 +998,7 @@ function TraceView({ report }: { report: ReportPayload }) {
             </span>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{f.text.slice(0, 28)}</span>
             <span className="mono muted" style={{ fontSize: 11, marginLeft: 'auto' }}>
-              {f.evidence.ran_at}
+              {formatDateTime(f.evidence.ran_at)}
               {typeof f.evidence.iteration === 'number' ? ` · #${f.evidence.iteration}` : ''}
             </span>
           </div>
@@ -899,6 +1019,14 @@ type ArtifactPaneProps = {
   onSelectSheet: (sheet: string) => void
   onPickSample: () => void
   onPickUpload: () => void
+  onOpenHistory: (reportId: string) => void
+  onOpenTask: (taskId: string) => void
+  onSaveTask: (reportId: string, title: string) => Promise<void>
+  onRenameTask: (taskId: string, title: string) => Promise<void>
+  onPickTaskUpload: () => void
+  onSelectTaskSheet: (sheet: string) => Promise<void>
+  onConfirmTaskRerun: () => Promise<void>
+  onStopTaskRerun: () => void
 }
 
 export default function ArtifactPane({
@@ -907,21 +1035,34 @@ export default function ArtifactPane({
   onSelectSheet,
   onPickSample,
   onPickUpload,
+  onOpenHistory,
+  onOpenTask,
+  onSaveTask,
+  onRenameTask,
+  onPickTaskUpload,
+  onSelectTaskSheet,
+  onConfirmTaskRerun,
+  onStopTaskRerun,
 }: ArtifactPaneProps) {
   const tab = state.artifactTab
-  const report = state.mode === 'history' ? state.historyReport : state.report
+  const report =
+    state.mode === 'tasks' ? null : state.mode === 'history' ? state.historyReport : state.report
   const dataset =
-    state.mode === 'history'
+    state.mode === 'tasks'
+      ? null
+      : state.mode === 'history'
       ? state.historyDataset
       : state.mode === 'dataset'
         ? state.datasetPreview
         : state.dataset
-  const task = state.mode === 'history' ? state.historyTask : state.task
+  const task = state.mode === 'tasks' ? null : state.mode === 'history' ? state.historyTask : state.task
   const userGoal = state.mode === 'history' ? state.historyUserGoal : state.userGoal
   const progress = state.mode === 'history' ? state.historyProgress : state.progress
-  const readonly = state.mode !== 'current'
+  const readonly = state.mode === 'history' || state.mode === 'dataset'
   const effectiveStep =
-    state.mode === 'history'
+    state.mode === 'tasks'
+      ? 'empty'
+      : state.mode === 'history'
       ? report
         ? 'report'
         : 'empty'
@@ -931,6 +1072,12 @@ export default function ArtifactPane({
           : 'empty'
         : state.step
   const [printPending, setPrintPending] = useState(false)
+  const [saveTaskOpen, setSaveTaskOpen] = useState(false)
+  const reportId = state.mode === 'history' ? state.historyDetail?.id ?? null : state.currentReportId
+  const reportTaskId =
+    state.mode === 'history' ? state.historyDetail?.task_id ?? null : state.currentReportTaskId
+  const reportTaskTitle =
+    state.mode === 'history' ? state.historyDetail?.task_title ?? null : state.currentReportTaskTitle
 
   // 导出 PDF（方案 A）：其它 tab 时报告内容未挂载，先切回报告 tab，等渲染后再触发浏览器打印。
   useEffect(() => {
@@ -977,6 +1124,11 @@ export default function ArtifactPane({
     crumbs = ['数据源', dataset?.data_source_ref.name ?? '选择数据源']
     icon = <Ico.Database />
   }
+  if (state.mode === 'tasks') {
+    title = state.taskDetail?.title ?? '分析任务'
+    crumbs = ['分析任务', state.taskDetail?.title ?? '选择任务']
+    icon = <Ico.Template />
+  }
 
   return (
     <section className="art">
@@ -996,6 +1148,15 @@ export default function ArtifactPane({
           {readonly && <span className="readonly-pill">只读</span>}
           {effectiveStep === 'report' && report && (
             <>
+              {reportTaskId ? (
+                <button className="btn ghost sm" onClick={() => onOpenTask(reportTaskId)}>
+                  <Ico.Template size={11} /> 已保存 · {reportTaskTitle ?? '查看任务'}
+                </button>
+              ) : reportId ? (
+                <button className="btn primary sm" onClick={() => setSaveTaskOpen(true)}>
+                  <Ico.Template size={11} /> 保存为任务
+                </button>
+              ) : null}
               <button className="btn ghost sm" onClick={handleExportPdf} title="导出当前报告为 PDF">
                 <Ico.Download size={11} /> 导出 PDF
               </button>
@@ -1034,7 +1195,19 @@ export default function ArtifactPane({
       )}
 
       <div className="art-scroll">
-        {!dataset && (
+        {state.mode === 'tasks' && (
+          <TaskPane
+            state={state}
+            onOpenHistory={onOpenHistory}
+            onRenameTask={onRenameTask}
+            onPickTaskUpload={onPickTaskUpload}
+            onSelectTaskSheet={onSelectTaskSheet}
+            onConfirmTaskRerun={onConfirmTaskRerun}
+            onStopTaskRerun={onStopTaskRerun}
+          />
+        )}
+
+        {state.mode !== 'tasks' && !dataset && (
           <div className="art-empty">
             <div className="art-empty-card">
               <div className="ic">
@@ -1080,7 +1253,12 @@ export default function ArtifactPane({
         {effectiveStep === 'generating' && <GenerationView state={{ ...state, progress }} />}
 
         {effectiveStep === 'report' && report && tab === 'report' && (
-          <ReportDoc report={report} dispatch={dispatch} />
+          <ReportDoc
+            report={report}
+            reportId={reportId}
+            dispatch={dispatch}
+            onOpenHistory={onOpenHistory}
+          />
         )}
         {effectiveStep === 'report' && report && tab === 'dataset' && (
           <DatasetProfile
@@ -1103,6 +1281,15 @@ export default function ArtifactPane({
         )}
         {effectiveStep === 'report' && report && tab === 'trace' && <TraceView report={report} />}
       </div>
+      <SaveTaskDialog
+        open={saveTaskOpen}
+        initialTitle={task?.task_title ?? report?.title ?? '分析任务'}
+        onClose={() => setSaveTaskOpen(false)}
+        onSave={(title) => {
+          if (!reportId) return Promise.resolve()
+          return onSaveTask(reportId, title)
+        }}
+      />
     </section>
   )
 }

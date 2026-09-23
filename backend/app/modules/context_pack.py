@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ContextPackError(ValueError):
@@ -25,7 +28,76 @@ REQUIRED_FIELD_ALIASES = {
 
 
 def load_default_context_pack() -> dict[str, Any]:
+    """内置出厂镜像（只读）：种子来源、恢复默认还原源、活动包读失败时的回落、测试 fixture。"""
     return deepcopy(_load_default_context_pack_cached())
+
+
+def builtin_pack_name() -> str:
+    return str(_load_default_context_pack_cached()["meta"]["name"])
+
+
+def builtin_base_version() -> str:
+    return str(_load_default_context_pack_cached()["meta"]["version"])
+
+
+def effective_version(base_version: str, revision: int) -> str:
+    """版本语义（§6.4）：revision 0 为出厂版本串，之后为 {base}-local.{revision}。"""
+    return base_version if revision <= 0 else f"{base_version}-local.{revision}"
+
+
+def stamped_payload(payload: dict[str, Any], version: str) -> dict[str, Any]:
+    """把有效版本串写入 payload.meta.version（服务端计算，忽略入参版本）。"""
+    stamped = deepcopy(payload)
+    meta = stamped.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+        stamped["meta"] = meta
+    meta["version"] = version
+    return stamped
+
+
+def load_active_context_pack() -> dict[str, Any]:
+    """活动包：每次运行时读 DB（不做进程缓存），读失败 / 校验失败回落内置出厂镜像。"""
+    try:
+        record = read_active_context_pack_record()
+    except Exception as exc:  # noqa: BLE001 —— 表缺失 / 库不可读都必须容错回落
+        logger.warning(
+            "CONTEXT_PACK_NOT_FOUND: 读取活动 Context Pack 失败（%s），回落内置出厂包。",
+            type(exc).__name__,
+        )
+        return load_default_context_pack()
+
+    if record is None:
+        return load_default_context_pack()
+
+    payload, base_version, revision = record
+    version = effective_version(base_version, revision)
+    try:
+        return validate_context_pack(stamped_payload(payload, version))
+    except ContextPackError as exc:
+        logger.warning(
+            "CONTEXT_PACK_NOT_FOUND: 活动 Context Pack 校验失败（%s），回落内置出厂包。",
+            exc,
+        )
+        return load_default_context_pack()
+
+
+def read_active_context_pack_record() -> tuple[dict[str, Any], str, int] | None:
+    """读取活动包记录 → (payload, base_version, revision)；无记录返回 None。"""
+    from sqlalchemy import select
+
+    from app.db.engine import SessionLocal, get_engine
+    from app.db.models import ContextPackRecord
+
+    with SessionLocal(bind=get_engine()) as session:
+        record = session.scalars(
+            select(ContextPackRecord).where(ContextPackRecord.name == builtin_pack_name())
+        ).one_or_none()
+        if record is None:
+            return None
+        if not isinstance(record.payload_json, dict):
+            raise ContextPackError("context pack payload must be an object")
+        return deepcopy(record.payload_json), record.base_version, record.revision
 
 
 @lru_cache(maxsize=1)
@@ -62,13 +134,45 @@ def validate_context_pack(payload: dict[str, Any]) -> dict[str, Any]:
     if missing_aliases:
         raise ContextPackError(f"Missing required aliases: {', '.join(missing_aliases)}")
 
+    for table in data_dictionary_tables(payload):
+        for column in require_list(table.get("columns"), "data_dictionary.tables[].columns"):
+            require_mapping(column, "data_dictionary.tables[].columns[]")
+            require_string(
+                column.get("display_name"), "data_dictionary.tables[].columns[].display_name"
+            )
+
     return payload
 
 
 def context_pack_identity(payload: dict[str, Any] | None = None) -> dict[str, str]:
-    pack = payload or load_default_context_pack()
+    pack = payload if payload is not None else load_active_context_pack()
     meta = pack["meta"]
     return {"context_pack_name": meta["name"], "context_pack_version": meta["version"]}
+
+
+def anomaly_thresholds(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """活动包异常阈值 significant_pct / critical_pct；缺失时返回空 dict。"""
+    pack = load_active_context_pack() if payload is None else payload
+    preferences = pack.get("report_preferences")
+    preferences = preferences if isinstance(preferences, dict) else {}
+    thresholds = preferences.get("anomaly_thresholds")
+    return dict(thresholds) if isinstance(thresholds, dict) else {}
+
+
+def context_pack_display_names(payload: dict[str, Any] | None = None) -> dict[str, str]:
+    pack = load_active_context_pack() if payload is None else payload
+    display_names: dict[str, str] = {}
+    for table in data_dictionary_tables(pack):
+        for column in require_list(table.get("columns"), "data_dictionary.tables[].columns"):
+            require_mapping(column, "data_dictionary.tables[].columns[]")
+            name = require_string(column.get("name"), "data_dictionary.tables[].columns[].name")
+            display_name = column.get("display_name")
+            display_names[name] = (
+                display_name
+                if isinstance(display_name, str) and display_name.strip()
+                else name
+            )
+    return display_names
 
 
 def build_field_aliases(payload: dict[str, Any]) -> dict[str, set[str]]:

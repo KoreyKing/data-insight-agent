@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 import pandas as pd
 
 from app.modules.dataset_store import DatasetHandle
 from app.modules.query_engine import QueryResult, run_validated_query
+from app.timestamps import utc_now_iso
+
+QUERY_REF_PATTERN = re.compile(r"query-\d+")
 
 
 @dataclass
@@ -151,25 +154,45 @@ def run_tool(
     return handler(runtime, args, iteration)
 
 
-def evidence_for(runtime: ToolRuntime, evidence_ref: str, iteration: int) -> dict[str, Any]:
+def resolve_evidence_ref(
+    runtime: ToolRuntime,
+    evidence_ref: str,
+) -> tuple[str, QueryResult | None]:
+    """解析 evidence 引用（architecture.md §3.2 v0.12）。
+
+    模型常写装饰性引用串（`"query-1(整体), query-2(门店)"`、`"query-5（渠道维度…）"`）。
+    先整串精确匹配，再按正则取首个可解析的 `query-N`；命中时把引用归一化为该 canonical
+    引用，让 SQL 追溯与 Report Composer 的自动配图都能生效。均未命中则按 short note 处理。
+    """
     result = runtime.queries.get(evidence_ref)
+    if result is not None:
+        return evidence_ref, result
+    for candidate in QUERY_REF_PATTERN.findall(evidence_ref):
+        result = runtime.queries.get(candidate)
+        if result is not None:
+            return candidate, result
+    return evidence_ref, None
+
+
+def evidence_for(runtime: ToolRuntime, evidence_ref: str, iteration: int) -> dict[str, Any]:
+    resolved_ref, result = resolve_evidence_ref(runtime, evidence_ref)
     if result is None:
         return {
             "sql": "",
             "data_source": "sales_orders",
-            "ran_at": datetime.now().isoformat(timespec="seconds"),
+            "ran_at": utc_now_iso(),
             "iteration": iteration,
-            "evidence_ref": evidence_ref,
+            "evidence_ref": resolved_ref,
         }
     return {
         "sql": result.sql,
         "data_source": "sales_orders",
-        "ran_at": datetime.now().isoformat(timespec="seconds"),
+        "ran_at": utc_now_iso(),
         "exec_ms": result.exec_ms,
         "row_count": result.row_count,
         "validated_by": "sql_validator",
         "iteration": iteration,
-        "evidence_ref": evidence_ref,
+        "evidence_ref": resolved_ref,
     }
 
 

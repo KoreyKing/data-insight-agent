@@ -1,5 +1,5 @@
 // API client — extracted from the original App.tsx inline wiring.
-// Single source for report workflow endpoints, model-status, and shared payload types.
+// Single source for backend API calls (report workflow, tasks, context pack, feedback, model config) and shared payload types.
 
 export type DataSourceRef = {
   id: string
@@ -47,6 +47,8 @@ export type DatasetPayload = {
   workbook_sheets: WorkbookSheet[]
   selected_sheet?: string | null
   field_profile: FieldProfile
+  context_pack_name?: string
+  context_pack_version?: string
 }
 
 export type StructuredTask = {
@@ -125,9 +127,34 @@ export type ReportMetadata = {
   query_engine?: string
   ran_at: string
   model: string
+  loop_rounds?: number | null
+  steps_recorded?: number
   iterations_used: number
   token_used: number
   time_range?: TimeRange
+}
+
+export type ComparisonSeverity = 'normal' | 'significant' | 'critical'
+
+export type PreviousComparisonEntry = {
+  name: string
+  unit: string
+  previous_value: number | null
+  current_value: number | null
+  delta_value: number | null
+  delta_unit: '%' | 'pp'
+  severity: ComparisonSeverity | null
+}
+
+// 跨报告对比段落（architecture.md §3.3）：仅任务重跑且链上有上期报告时出现，数值由后端确定性计算。
+export type PreviousComparison = {
+  previous_report_id: string
+  previous_ran_at: string | null
+  previous_status: 'completed' | 'partial'
+  previous_time_range: TimeRange | null
+  same_period: boolean
+  baseline: PreviousComparisonEntry[]
+  summary_note: string
 }
 
 export type ReportPayload = {
@@ -142,6 +169,7 @@ export type ReportPayload = {
   metadata: ReportMetadata
   context_pack_name?: string
   context_pack_version?: string
+  previous_comparison?: PreviousComparison | null
 }
 
 export type PaginatedResponse<T> = {
@@ -167,6 +195,7 @@ export type HistoryReportListItem = {
   ran_at: string | null
   created_at: string | null
   model: string
+  loop_rounds: number | null
   iterations_used: number
   token_used: number
   finding_count: number
@@ -175,9 +204,57 @@ export type HistoryReportListItem = {
 }
 
 export type HistoryReportDetail = HistoryReportListItem & {
+  task_id: string | null
+  task_title: string | null
   report: ReportPayload
   task: StructuredTask
   dataset: HistoryDatasetSummary
+}
+
+export type AnalysisTaskListItem = {
+  id: string
+  title: string
+  analysis_goal: string
+  created_at: string | null
+  status: string
+  context_pack_name: string
+  context_pack_version: string
+  report_count: number
+  last_run_at: string | null
+}
+
+export type AnalysisTaskReport = {
+  id: string
+  status: string
+  ran_at: string | null
+  summary: string
+  finding_count: number
+  has_previous_comparison: boolean
+}
+
+export type AnalysisTaskDetail = AnalysisTaskListItem & {
+  structured_task: StructuredTask
+  schema_fingerprint: string
+  schema_fingerprint_json: {
+    version?: number
+    canonical_fields?: string[]
+    computed_with_pack?: { name?: string; version?: string }
+  }
+  canonical_fields: { name: string; display_name: string }[]
+  source_dataset_id: string
+  reports: AnalysisTaskReport[]
+  warnings?: DuplicateTaskWarning[]
+}
+
+export type DuplicateTaskWarning = {
+  task_id: string
+  task_title: string
+}
+
+export type TaskListResponse = {
+  tasks: AnalysisTaskListItem[]
+  limit: number
+  offset: number
 }
 
 export type DatasetReportRef = {
@@ -243,6 +320,66 @@ export type TestLlmConnectionResponse = {
 export type ApiError = {
   code: string
   message: string
+  details?: Record<string, unknown>
+}
+
+// 业务口径（architecture.md §2.3 / §6.4）：编辑器只改指标口径 / 字段别名 / 异常阈值三块，
+// 其余内容原样回传；服务端四层校验是唯一权威。
+export type PackMetric = {
+  name: string
+  calculation: string
+  unit: string
+  aliases: string[]
+  notes: string
+  [key: string]: unknown
+}
+
+export type PackColumn = {
+  name: string
+  display_name: string
+  description: string
+  aliases: string[]
+  [key: string]: unknown
+}
+
+export type ContextPackPayload = {
+  meta: { name: string; version: string; [key: string]: unknown }
+  metrics: PackMetric[]
+  data_dictionary: {
+    tables: { name: string; columns: PackColumn[]; [key: string]: unknown }[]
+    [key: string]: unknown
+  }
+  report_preferences: {
+    anomaly_thresholds: { significant_pct: number | null; critical_pct: number | null }
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+export type ContextPackIssue = {
+  layer: number
+  path: string
+  message: string
+}
+
+export type ContextPackState = {
+  name: string
+  version: string
+  revision: number
+  is_modified: boolean
+  updated_at: string | null
+  payload: ContextPackPayload
+  warnings?: ContextPackIssue[]
+}
+
+// 报告反馈（architecture.md §2.3 v0.14）：一报告一票，重复提交即改票，只落本地库、无外发。
+export type FeedbackVerdict = 'useful' | 'not_useful'
+
+export type ReportFeedbackRecord = {
+  report_id: string
+  verdict: FeedbackVerdict
+  comment: string
+  updated_at: string
 }
 
 export const defaultGoal =
@@ -256,7 +393,14 @@ export const errorMessages: Record<string, string> = {
   XLSX_UNSUPPORTED_FEATURE:
     '当前版本只支持首行表头的普通二维表格，不解析复杂表头、合并单元格、透视表或图表。',
   UNSUPPORTED_FILE_TYPE: '当前仅支持 CSV 和 .xlsx 文件，请另存为 CSV 或 .xlsx 后上传。',
-  UPLOAD_NOT_FOUND: '未找到上传 session，请重新上传文件。',
+  UPLOAD_NOT_FOUND: '上传已过期，请重新选择文件。',
+  TASK_NOT_FOUND: '没有找到这个任务。',
+  TASK_TITLE_INVALID: '任务名不能为空，且不超过 255 字。',
+  REPORT_ALREADY_LINKED: '这份报告已经属于一个分析任务。',
+  SCHEMA_MISMATCH: '新文件的数据结构与这个任务不一致，无法对比重跑。',
+  CONTEXT_PACK_VALIDATION_FAILED: '口径设置有问题，尚未保存。',
+  CONTEXT_PACK_NOT_FOUND: '业务口径数据异常，已回退默认口径。',
+  REQUEST_BODY_INVALID: '请求内容包含无法处理的字符，请检查输入后重试。',
   NETWORK_ERROR: '无法连接到分析服务，请确认后端服务已启动后重试。',
 }
 
@@ -289,6 +433,10 @@ export function asApiError(value: unknown): ApiError {
     return {
       code: error.code,
       message: errorMessages[error.code] ?? error.message,
+      details:
+        'details' in value && value.details && typeof value.details === 'object'
+          ? (value.details as Record<string, unknown>)
+          : undefined,
     }
   }
   return { code: 'UNKNOWN_ERROR', message: '处理过程中出现意外错误' }
@@ -308,6 +456,18 @@ export function selectSheet(sessionId: string, sheet: string): Promise<DatasetPa
   return requestJson<DatasetPayload>(
     `/api/v1/uploads/${sessionId}?sheet=${encodeURIComponent(sheet)}`,
   )
+}
+
+// 按当前活动口径重新识别已上传文件（口径可能在上传后被编辑，§2.3 v0.13 重跑前端预检）。
+export function refreshUpload(
+  sessionId: string,
+  sheet: string | null | undefined,
+  signal?: AbortSignal,
+): Promise<DatasetPayload> {
+  const query = sheet ? `?sheet=${encodeURIComponent(sheet)}` : ''
+  return requestJson<DatasetPayload>(`/api/v1/uploads/${encodeURIComponent(sessionId)}${query}`, {
+    signal,
+  })
 }
 
 export type DimensionOption = {
@@ -331,7 +491,7 @@ export function runReport(
   dataSourceRef: DataSourceRef,
   task: StructuredTask | null,
   signal?: AbortSignal,
-): Promise<{ report_id?: string; report: ReportPayload }> {
+): Promise<{ report_id: string; report: ReportPayload }> {
   return requestJson('/api/v1/reports/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -351,6 +511,27 @@ export function fetchReportDetail(reportId: string): Promise<HistoryReportDetail
   return requestJson(`/api/v1/reports/${encodeURIComponent(reportId)}`)
 }
 
+export function fetchReportFeedback(
+  reportId: string,
+): Promise<{ feedback: ReportFeedbackRecord | null }> {
+  return requestJson(`/api/v1/reports/${encodeURIComponent(reportId)}/feedback`)
+}
+
+export function submitReportFeedback(
+  reportId: string,
+  verdict: FeedbackVerdict,
+  comment: string,
+): Promise<ReportFeedbackRecord> {
+  return requestJson<ReportFeedbackRecord>(
+    `/api/v1/reports/${encodeURIComponent(reportId)}/feedback`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict, comment }),
+    },
+  )
+}
+
 export function fetchDatasets(
   limit = 20,
   offset = 0,
@@ -360,6 +541,59 @@ export function fetchDatasets(
 
 export function fetchDataset(datasetId: string): Promise<HistoryDatasetDetail> {
   return requestJson(`/api/v1/datasets/${encodeURIComponent(datasetId)}`)
+}
+
+export function saveTask(reportId: string, title: string): Promise<AnalysisTaskDetail> {
+  return requestJson<AnalysisTaskDetail>('/api/v1/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ report_id: reportId, title }),
+  })
+}
+
+export function fetchTasks(limit = 50, offset = 0): Promise<TaskListResponse> {
+  return requestJson<TaskListResponse>(`/api/v1/tasks?limit=${limit}&offset=${offset}`)
+}
+
+export function fetchTaskDetail(taskId: string): Promise<AnalysisTaskDetail> {
+  return requestJson<AnalysisTaskDetail>(`/api/v1/tasks/${encodeURIComponent(taskId)}`)
+}
+
+export function renameTask(taskId: string, title: string): Promise<AnalysisTaskDetail> {
+  return requestJson<AnalysisTaskDetail>(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+}
+
+export function rerunTask(
+  taskId: string,
+  dataSourceRef: DataSourceRef,
+  signal?: AbortSignal,
+): Promise<{ report_id: string; report: ReportPayload }> {
+  return requestJson(`/api/v1/tasks/${encodeURIComponent(taskId)}/rerun`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data_source_ref: dataSourceRef }),
+    signal,
+  })
+}
+
+export function getContextPack(): Promise<ContextPackState> {
+  return requestJson<ContextPackState>('/api/v1/context-pack')
+}
+
+export function saveContextPack(payload: ContextPackPayload): Promise<ContextPackState> {
+  return requestJson<ContextPackState>('/api/v1/context-pack', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload }),
+  })
+}
+
+export function resetContextPack(): Promise<ContextPackState> {
+  return requestJson<ContextPackState>('/api/v1/context-pack/reset', { method: 'POST' })
 }
 
 export function fetchModelStatus(): Promise<ModelStatus> {

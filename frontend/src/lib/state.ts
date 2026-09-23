@@ -1,5 +1,7 @@
 // App state machine: empty → dataset → parsing → task_ready → generating → report.
 import type {
+  AnalysisTaskDetail,
+  AnalysisTaskListItem,
   ApiError,
   ApiWarning,
   DatasetPayload,
@@ -16,7 +18,7 @@ export type Step = 'empty' | 'dataset' | 'parsing' | 'task_ready' | 'generating'
 
 export type ArtifactTab = 'report' | 'dataset' | 'task' | 'trace'
 
-export type AppMode = 'current' | 'history' | 'dataset'
+export type AppMode = 'current' | 'tasks' | 'history' | 'dataset'
 
 export type ProgressStep = {
   state: 'pending' | 'active' | 'done'
@@ -40,11 +42,17 @@ export type AppState = {
   tokensUsed: number
   elapsed: string
   report: ReportPayload | null
+  currentReportId: string | null
+  currentReportTaskId: string | null
+  currentReportTaskTitle: string | null
   artifactTab: ArtifactTab
   error: ApiError | null
   busy: string | null
   chartErrors: string[]
   genWaiting: boolean
+  activeRunId: string | null
+  activeRunOrigin: 'current' | 'task-rerun' | null
+  activeRunTaskId: string | null
   historyReports: HistoryReportListItem[]
   historyTotal: number
   historyLoading: boolean
@@ -57,6 +65,14 @@ export type AppState = {
   historyReport: ReportPayload | null
   historyProgress: ProgressStep[]
   historyUserGoal: string
+  tasks: AnalysisTaskListItem[]
+  tasksLoading: boolean
+  tasksError: ApiError | null
+  selectedTaskId: string | null
+  taskDetailLoading: boolean
+  taskDetail: AnalysisTaskDetail | null
+  taskRerunDataset: DatasetPayload | null
+  taskRerunError: ApiError | null
   datasets: HistoryDatasetListItem[]
   datasetsTotal: number
   datasetsLoading: boolean
@@ -82,11 +98,17 @@ export const INITIAL: AppState = {
   tokensUsed: 0,
   elapsed: '0.0',
   report: null,
+  currentReportId: null,
+  currentReportTaskId: null,
+  currentReportTaskTitle: null,
   artifactTab: 'report',
   error: null,
   busy: null,
   chartErrors: [],
   genWaiting: false,
+  activeRunId: null,
+  activeRunOrigin: null,
+  activeRunTaskId: null,
   historyReports: [],
   historyTotal: 0,
   historyLoading: false,
@@ -99,6 +121,14 @@ export const INITIAL: AppState = {
   historyReport: null,
   historyProgress: [],
   historyUserGoal: '',
+  tasks: [],
+  tasksLoading: false,
+  tasksError: null,
+  selectedTaskId: null,
+  taskDetailLoading: false,
+  taskDetail: null,
+  taskRerunDataset: null,
+  taskRerunError: null,
   datasets: [],
   datasetsTotal: 0,
   datasetsLoading: false,
@@ -112,6 +142,8 @@ export const INITIAL: AppState = {
 export type Action =
   | { type: 'RESET' }
   | { type: 'NAV_CURRENT' }
+  | { type: 'NAV_TASKS' }
+  | { type: 'PACK_CHANGED' }
   | { type: 'NAV_HISTORY' }
   | { type: 'NAV_DATASETS' }
   | { type: 'SET_BUSY'; busy: string | null }
@@ -130,11 +162,19 @@ export type Action =
   | { type: 'ADD_DIM'; value: string }
   | { type: 'SET_COMPARE'; value: string }
   | { type: 'ABORT_TASK' }
-  | { type: 'RUN_REPORT' }
+  | { type: 'RUN_REPORT'; runId: string }
   | { type: 'STOP_GEN' }
   | { type: 'GEN_PROGRESS'; progress: ProgressStep[]; iter?: number; waiting?: boolean }
   | { type: 'GEN_TICK'; elapsed: string }
-  | { type: 'REPORT_DONE'; report: ReportPayload; progress: ProgressStep[] }
+  | {
+      type: 'REPORT_DONE'
+      runId: string
+      reportId: string
+      report: ReportPayload
+      progress: ProgressStep[]
+      linkedTask?: { id: string; title: string } | null
+    }
+  | { type: 'REPORT_TASK_LINKED'; reportId: string; task: AnalysisTaskDetail }
   | { type: 'TAB'; tab: ArtifactTab }
   | { type: 'CHART_ERROR'; title: string }
   | { type: 'HISTORY_LIST_LOADING' }
@@ -161,14 +201,28 @@ export type Action =
       progress: ProgressStep[]
       userGoal: string
     }
-  | { type: 'HISTORY_DETAIL_ERROR'; error: ApiError }
+  | { type: 'HISTORY_DETAIL_ERROR'; reportId: string; error: ApiError }
+  | { type: 'TASKS_LIST_LOADING' }
+  | { type: 'TASKS_LIST_LOADED'; tasks: AnalysisTaskListItem[] }
+  | { type: 'TASKS_LIST_ERROR'; error: ApiError }
+  | { type: 'TASK_DETAIL_LOADING'; taskId: string }
+  | { type: 'TASK_DETAIL_LOADED'; detail: AnalysisTaskDetail }
+  | { type: 'TASK_DETAIL_ERROR'; taskId: string; error: ApiError }
+  | { type: 'TASK_RENAMED'; detail: AnalysisTaskDetail }
+  | { type: 'TASK_RERUN_UPLOAD_START' }
+  | { type: 'TASK_RERUN_DATASET_LOADED'; dataset: DatasetPayload }
+  | { type: 'TASK_RERUN_ERROR'; error: ApiError | null; runId?: string }
+  | { type: 'TASK_RERUN_CHECK_START'; runId: string; taskId: string }
+  | { type: 'TASK_RERUN_DATASET_REFRESHED'; runId: string; dataset: DatasetPayload }
+  | { type: 'TASK_RERUN_GENERATING'; runId: string }
+  | { type: 'STOP_TASK_RERUN' }
   | { type: 'DATASET_DETAIL_LOADING'; datasetId: string }
   | {
       type: 'DATASET_DETAIL_LOADED'
       detail: HistoryDatasetDetail
       dataset: DatasetPayload
     }
-  | { type: 'DATASET_DETAIL_ERROR'; error: ApiError }
+  | { type: 'DATASET_DETAIL_ERROR'; datasetId: string; error: ApiError }
 
 function preservedLibrary(state: AppState): Partial<AppState> {
   return {
@@ -184,6 +238,14 @@ function preservedLibrary(state: AppState): Partial<AppState> {
     historyReport: state.historyReport,
     historyProgress: state.historyProgress,
     historyUserGoal: state.historyUserGoal,
+    tasks: state.tasks,
+    tasksLoading: state.tasksLoading,
+    tasksError: state.tasksError,
+    selectedTaskId: state.selectedTaskId,
+    taskDetailLoading: state.taskDetailLoading,
+    taskDetail: state.taskDetail,
+    taskRerunDataset: state.taskRerunDataset,
+    taskRerunError: state.taskRerunError,
     datasets: state.datasets,
     datasetsTotal: state.datasetsTotal,
     datasetsLoading: state.datasetsLoading,
@@ -201,6 +263,18 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...INITIAL, ...preservedLibrary(state), mode: 'current' }
     case 'NAV_CURRENT':
       return { ...state, mode: 'current', busy: null, error: null }
+    case 'NAV_TASKS':
+      // 进行中的任务重跑保持核对 / 生成态，避免按钮重新可点而并发发起第二次重跑。
+      return {
+        ...state,
+        mode: 'tasks',
+        busy: state.activeRunOrigin === 'task-rerun' ? state.busy : null,
+        error: null,
+      }
+    case 'PACK_CHANGED':
+      // 口径已变：上一次「结构不一致」结论可能过期，允许直接重试（点击时会按新口径重新核对）。
+      if (state.activeRunId || state.taskRerunError?.code !== 'SCHEMA_MISMATCH') return state
+      return { ...state, taskRerunError: null }
     case 'NAV_HISTORY':
       return { ...state, mode: 'history', busy: null, error: null }
     case 'NAV_DATASETS':
@@ -217,12 +291,18 @@ export function reducer(state: AppState, action: Action): AppState {
         dataset: action.dataset,
         task: null,
         report: null,
+        currentReportId: null,
+        currentReportTaskId: null,
+        currentReportTaskTitle: null,
         userGoal: '',
         parsing: [],
         parseWarnings: [],
         error: null,
         busy: null,
         chartErrors: [],
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
         artifactTab: 'dataset',
       }
     case 'SUBMIT_GOAL':
@@ -233,7 +313,13 @@ export function reducer(state: AppState, action: Action): AppState {
         step: 'parsing',
         parsing: [],
         report: null,
+        currentReportId: null,
+        currentReportTaskId: null,
+        currentReportTaskTitle: null,
         error: null,
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
       }
     case 'PARSE_PROGRESS':
       return { ...state, parsing: action.parsing }
@@ -270,7 +356,17 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!state.task) return state
       return { ...state, compare: action.value, task: { ...state.task, comparison: action.value } }
     case 'ABORT_TASK':
-      return { ...state, step: 'dataset', userGoal: '', task: null, parsing: [], parseWarnings: [] }
+      return {
+        ...state,
+        step: 'dataset',
+        userGoal: '',
+        task: null,
+        parsing: [],
+        parseWarnings: [],
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
+      }
     case 'RUN_REPORT':
       return {
         ...state,
@@ -283,6 +379,9 @@ export function reducer(state: AppState, action: Action): AppState {
         genWaiting: false,
         error: null,
         chartErrors: [],
+        activeRunId: action.runId,
+        activeRunOrigin: 'current',
+        activeRunTaskId: null,
       }
     case 'STOP_GEN':
       // User aborted the in-flight run — return to the (kept) task for re-run.
@@ -294,6 +393,9 @@ export function reducer(state: AppState, action: Action): AppState {
         iter: 0,
         elapsed: '0.0',
         busy: null,
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
       }
     case 'GEN_PROGRESS':
       return {
@@ -304,17 +406,76 @@ export function reducer(state: AppState, action: Action): AppState {
       }
     case 'GEN_TICK':
       return { ...state, elapsed: action.elapsed }
-    case 'REPORT_DONE':
-      return {
+    case 'REPORT_DONE': {
+      if (state.activeRunId !== action.runId) return state
+        if (
+          state.activeRunOrigin === 'task-rerun' &&
+          (state.mode !== 'tasks' || state.selectedTaskId !== state.activeRunTaskId)
+        ) {
+          return {
+            ...state,
+            busy: null,
+            activeRunId: null,
+            activeRunOrigin: null,
+            activeRunTaskId: null,
+          }
+        }
+        const rerunDataset = action.linkedTask ? state.taskRerunDataset : null
+        const rerunTask =
+          action.linkedTask && state.taskDetail && rerunDataset
+            ? {
+                ...state.taskDetail.structured_task,
+                data_source_ref: rerunDataset.data_source_ref,
+              }
+            : null
+        const shouldActivate =
+          state.activeRunOrigin === 'current'
+            ? state.mode === 'current'
+            : state.activeRunOrigin === 'task-rerun'
+              ? state.mode === 'tasks' && state.selectedTaskId === state.activeRunTaskId
+              : false
+        return {
         ...state,
-        mode: 'current',
+        mode: shouldActivate ? 'current' : state.mode,
         step: 'report',
+        dataset: rerunDataset ?? state.dataset,
+        task: rerunTask ?? state.task,
+        userGoal: rerunTask ? state.taskDetail?.analysis_goal ?? '' : state.userGoal,
+        compare: rerunTask?.comparison || state.compare,
         report: action.report,
+        currentReportId: action.reportId,
+        currentReportTaskId: action.linkedTask?.id ?? null,
+        currentReportTaskTitle: action.linkedTask?.title ?? null,
         progress: action.progress,
         genWaiting: false,
         artifactTab: 'report',
         busy: null,
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
+        }
       }
+    case 'REPORT_TASK_LINKED': {
+      const task = action.task
+      const nextTasks = [
+        { ...task },
+        ...state.tasks.filter((item) => item.id !== task.id),
+      ]
+      return {
+        ...state,
+        tasks: nextTasks,
+        currentReportTaskId:
+          state.currentReportId === action.reportId ? task.id : state.currentReportTaskId,
+        currentReportTaskTitle:
+          state.currentReportId === action.reportId ? task.title : state.currentReportTaskTitle,
+        historyDetail:
+          state.historyDetail?.id === action.reportId
+            ? { ...state.historyDetail, task_id: task.id, task_title: task.title }
+            : state.historyDetail,
+        taskDetail: task,
+        selectedTaskId: task.id,
+      }
+    }
     case 'TAB':
       return { ...state, artifactTab: action.tab }
     case 'CHART_ERROR':
@@ -355,6 +516,7 @@ export function reducer(state: AppState, action: Action): AppState {
         artifactTab: 'report',
       }
     case 'HISTORY_DETAIL_LOADED':
+      if (state.mode !== 'history' || state.selectedHistoryId !== action.detail.id) return state
       return {
         ...state,
         mode: 'history',
@@ -370,11 +532,130 @@ export function reducer(state: AppState, action: Action): AppState {
         artifactTab: 'report',
       }
     case 'HISTORY_DETAIL_ERROR':
+      if (state.mode !== 'history' || state.selectedHistoryId !== action.reportId) return state
       return {
         ...state,
         historyDetailLoading: false,
         historyError: action.error,
         error: action.error,
+      }
+    case 'TASKS_LIST_LOADING':
+      return { ...state, tasksLoading: true, tasksError: null }
+    case 'TASKS_LIST_LOADED':
+      return { ...state, tasks: action.tasks, tasksLoading: false, tasksError: null }
+    case 'TASKS_LIST_ERROR':
+      return { ...state, tasksLoading: false, tasksError: action.error }
+    case 'TASK_DETAIL_LOADING':
+      return {
+        ...state,
+        mode: 'tasks',
+        selectedTaskId: action.taskId,
+        taskDetailLoading: true,
+        tasksError: null,
+        taskRerunDataset: null,
+        taskRerunError: null,
+        error: null,
+      }
+    case 'TASK_DETAIL_LOADED':
+      if (state.mode !== 'tasks' || state.selectedTaskId !== action.detail.id) return state
+      return {
+        ...state,
+        mode: 'tasks',
+        selectedTaskId: action.detail.id,
+        taskDetailLoading: false,
+        taskDetail: action.detail,
+        tasksError: null,
+      }
+    case 'TASK_DETAIL_ERROR':
+      if (state.mode !== 'tasks' || state.selectedTaskId !== action.taskId) return state
+      return {
+        ...state,
+        taskDetailLoading: false,
+        tasksError: action.error,
+        error: action.error,
+      }
+    case 'TASK_RENAMED':
+      return {
+        ...state,
+        taskDetail: action.detail,
+        tasks: state.tasks.map((task) =>
+          task.id === action.detail.id ? { ...task, title: action.detail.title } : task,
+        ),
+        currentReportTaskTitle:
+          state.currentReportTaskId === action.detail.id
+            ? action.detail.title
+            : state.currentReportTaskTitle,
+        historyDetail:
+          state.historyDetail?.task_id === action.detail.id
+            ? { ...state.historyDetail, task_title: action.detail.title }
+            : state.historyDetail,
+      }
+    case 'TASK_RERUN_UPLOAD_START':
+      return {
+        ...state,
+        taskRerunDataset: null,
+        taskRerunError: null,
+        busy: 'task-upload',
+      }
+    case 'TASK_RERUN_DATASET_LOADED':
+      return {
+        ...state,
+        taskRerunDataset: action.dataset,
+        taskRerunError: null,
+        busy: null,
+      }
+    case 'TASK_RERUN_ERROR':
+      if (action.runId && state.activeRunId !== action.runId) return state
+      return {
+        ...state,
+        taskRerunError: action.error,
+        busy: null,
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
+      }
+    case 'TASK_RERUN_CHECK_START':
+      return {
+        ...state,
+        taskRerunError: null,
+        busy: 'task-rerun-check',
+        activeRunId: action.runId,
+        activeRunOrigin: 'task-rerun',
+        activeRunTaskId: action.taskId,
+      }
+    case 'TASK_RERUN_DATASET_REFRESHED':
+      // 点击重跑时按当前口径刷新的识别结果；仅对仍在进行的这次重跑生效。
+      if (state.activeRunId !== action.runId) return state
+      return { ...state, taskRerunDataset: action.dataset }
+    case 'TASK_RERUN_GENERATING':
+      // 刷新后的识别与任务一致才从「核对中」切到生成进度（§2.3 v0.13）。
+      if (state.activeRunId !== action.runId || !state.taskDetail || !state.taskRerunDataset) {
+        return state
+      }
+      return {
+        ...state,
+        progress: [],
+        iter: 0,
+        tokensUsed: 0,
+        elapsed: '0.0',
+        genWaiting: false,
+        error: null,
+        taskRerunError: null,
+        busy: 'task-rerun',
+        chartErrors: [],
+        artifactTab: 'report',
+      }
+    case 'STOP_TASK_RERUN':
+      return {
+        ...state,
+        progress: [],
+        genWaiting: false,
+        iter: 0,
+        elapsed: '0.0',
+        busy: null,
+        activeRunId: null,
+        activeRunOrigin: null,
+        activeRunTaskId: null,
       }
     case 'DATASET_DETAIL_LOADING':
       return {
@@ -387,6 +668,7 @@ export function reducer(state: AppState, action: Action): AppState {
         artifactTab: 'dataset',
       }
     case 'DATASET_DETAIL_LOADED':
+      if (state.mode !== 'dataset' || state.selectedDatasetId !== action.detail.id) return state
       return {
         ...state,
         mode: 'dataset',
@@ -398,6 +680,7 @@ export function reducer(state: AppState, action: Action): AppState {
         artifactTab: 'dataset',
       }
     case 'DATASET_DETAIL_ERROR':
+      if (state.mode !== 'dataset' || state.selectedDatasetId !== action.datasetId) return state
       return {
         ...state,
         datasetDetailLoading: false,

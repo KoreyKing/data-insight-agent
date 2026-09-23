@@ -1,6 +1,8 @@
-# 构建上下文裁剪：只需 backend/ 与 frontend/ 源码，其余一律排除。
-.git
-.github
+# 构建上下文白名单：镜像只需要 backend/ 与 frontend/ 源码（见 Dockerfile 的 COPY），
+# 先排除全部，再放行这两个目录；仓库根的其余内容（.git、.env、data/、文档与工具目录）一律不进构建上下文。
+*
+!backend
+!frontend
 # Python
 **/.venv
 **/__pycache__
@@ -13,12 +15,12 @@
 frontend/dist
 **/*.tsbuildinfo
 **/.vite
-# 运行数据与密钥
-data
-*.db
-*.sqlite
-*.sqlite3
-.env
-.env.*
+# 运行数据与密钥（backend/data 为在 backend/ 下直接启动时的旧运行目录；源码里名为 data 的目录照常进入）
+backend/data
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/.env
+**/.env.*
 # 杂项
 **/.DS_Store

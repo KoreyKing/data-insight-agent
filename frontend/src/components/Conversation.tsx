@@ -3,7 +3,7 @@ import type { Action, AppState } from '../lib/state'
 import { taskView } from '../lib/state'
 import { defaultGoal, type DimensionOption, type ModelStatus } from '../api/client'
 import { formatHistoryDate, historySummary, statusLabel } from '../lib/history'
-import { friendlyContextPack } from '../lib/view'
+import { formatAnalysisCounts, friendlyContextPack } from '../lib/view'
 import { Ico } from './icons'
 
 const SUGGESTED_QUESTIONS = [
@@ -246,22 +246,83 @@ function LibraryHeader({
   title,
   count,
   note,
+  eyebrow = 'READ ONLY',
 }: {
   icon: ReactNode
   title: string
   count: number
   note: string
+  eyebrow?: string
 }) {
   return (
     <div className="library-hd">
       <div className="library-ic">{icon}</div>
       <div>
-        <div className="library-eyebrow">READ ONLY</div>
+        <div className="library-eyebrow">{eyebrow}</div>
         <h2>{title}</h2>
         <p>{note}</p>
       </div>
       <span className="library-count">{count}</span>
     </div>
+  )
+}
+
+function TaskLibrary({
+  state,
+  onOpenTask,
+}: {
+  state: AppState
+  onOpenTask: (taskId: string) => void
+}) {
+  return (
+    <section className="conv library-panel">
+      <LibraryHeader
+        icon={<Ico.Template size={16} />}
+        title="分析任务"
+        count={state.tasks.length}
+        eyebrow="REUSABLE"
+        note="保存满意的报告为任务，下期上传同结构文件即可沿用任务定义重跑。"
+      />
+      <div className="library-scroll">
+        {state.tasksLoading && <div className="library-empty">正在读取分析任务…</div>}
+        {state.tasksError && (
+          <div className="library-empty error">
+            <Ico.Warn size={14} /> {state.tasksError.message}
+          </div>
+        )}
+        {!state.tasksLoading && !state.tasksError && state.tasks.length === 0 && (
+          <div className="library-empty">
+            <Ico.Template size={20} />
+            <span>还没有保存的任务</span>
+            <p>生成报告后可以把它保存为任务，下期数据一键重跑。</p>
+          </div>
+        )}
+        {!state.tasksLoading &&
+          state.tasks.map((task) => (
+            <button
+              key={task.id}
+              className={`library-row ${state.selectedTaskId === task.id ? 'active' : ''}`}
+              onClick={() => onOpenTask(task.id)}
+            >
+              <div className="library-row-main">
+                <div className="library-row-title">{task.title}</div>
+                <p>{historySummary(task.analysis_goal, 92)}</p>
+              </div>
+              <div className="library-row-meta">
+                <span>
+                  <Ico.Clock size={11} /> 最近运行 {formatHistoryDate(task.last_run_at)}
+                </span>
+                <span>{task.context_pack_name}</span>
+                <span>{task.context_pack_version}</span>
+              </div>
+              <div className="library-row-stats">
+                <span>{task.report_count} 份报告</span>
+                <span>{task.status === 'active' ? '可重跑' : task.status}</span>
+              </div>
+            </button>
+          ))}
+      </div>
+    </section>
   )
 }
 
@@ -317,7 +378,7 @@ function HistoryLibrary({
               <div className="library-row-stats">
                 <span>{report.finding_count} 洞察</span>
                 <span>{report.anomaly_count} 异常</span>
-                <span>{report.iterations_used} 步</span>
+                <span>{formatAnalysisCounts(report.loop_rounds, report.iterations_used)}</span>
               </div>
             </button>
           ))}
@@ -397,6 +458,7 @@ type ConversationProps = {
   onStop: () => void
   onOpenHistory: (reportId: string) => void
   onOpenDataset: (datasetId: string) => void
+  onOpenTask: (taskId: string) => void
 }
 
 export default function Conversation({
@@ -410,6 +472,7 @@ export default function Conversation({
   onStop,
   onOpenHistory,
   onOpenDataset,
+  onOpenTask,
 }: ConversationProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [composer, setComposer] = useState(defaultGoal)
@@ -426,6 +489,10 @@ export default function Conversation({
 
   const dataset = state.dataset
   const sourceName = dataset?.data_source_ref.name ?? ''
+
+  if (state.mode === 'tasks') {
+    return <TaskLibrary state={state} onOpenTask={onOpenTask} />
+  }
 
   if (state.mode === 'history') {
     return <HistoryLibrary state={state} onOpenHistory={onOpenHistory} />
@@ -565,6 +632,15 @@ export default function Conversation({
                 <Ico.Warn size={12} /> {w.message}
               </div>
             ))}
+            {state.tasks.length > 0 && !state.currentReportTaskId && (
+              <button className="task-reuse-hint" onClick={() => dispatch({ type: 'NAV_TASKS' })}>
+                <Ico.Template size={13} />
+                <span>
+                  如果这是某个已保存任务的下期数据，请到任务详情上传重跑，以获得上期对比。
+                </span>
+                <Ico.Caret size={10} />
+              </button>
+            )}
           </AgentMsg>
         )}
       </div>

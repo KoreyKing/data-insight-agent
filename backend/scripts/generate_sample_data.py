@@ -16,6 +16,10 @@ CURRENT_START = date(2026, 5, 11)
 CURRENT_END = date(2026, 5, 17)
 PREVIOUS_START = date(2026, 5, 4)
 PREVIOUS_END = date(2026, 5, 10)
+PERIOD2_START = CURRENT_END + timedelta(days=1)
+PERIOD2_END = PERIOD2_START + timedelta(days=6)
+PERIOD2_SEED = 20260527
+VALID_ORDER_STATUSES = {"completed", "partial_refund"}
 COLUMNS = [
     "order_id",
     "order_date",
@@ -136,17 +140,49 @@ def generate_sample_data(
     output_dir: Path | str | None = None,
     qa_path: Path | str | None = None,
 ) -> dict[str, str]:
-    rng = random.Random(SEED)
     backend_dir = Path(__file__).resolve().parents[1]
     output = Path(output_dir) if output_dir else backend_dir / "app" / "sample_data"
     output.mkdir(parents=True, exist_ok=True)
     qa_output = Path(qa_path) if qa_path else backend_dir / ".sample-data-qa.json"
 
+    dataframe, _products = build_period1_dataframe()
+    csv_path = output / "retail_sales_orders.csv"
+    xlsx_path = output / "retail_sales_orders.xlsx"
+    dataframe.to_csv(csv_path, index=False, encoding="utf-8")
+    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
+        dataframe.to_excel(writer, sheet_name="sales_orders", index=False)
+
+    qa = build_qa_summary(
+        dataframe,
+        fixture_id="period1",
+        current_start=CURRENT_START,
+        current_end=CURRENT_END,
+        previous_start=PREVIOUS_START,
+        previous_end=PREVIOUS_END,
+    )
+    qa_output.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"csv_path": str(csv_path), "xlsx_path": str(xlsx_path), "qa_path": str(qa_output)}
+
+
+def build_period1_dataframe() -> tuple[pd.DataFrame, list[Product]]:
+    rng = random.Random(SEED)
     products = build_products(rng)
+    rows = generate_rows(START_DATE, DAYS, rng, products, week_offset=0)
+    return pd.DataFrame(rows, columns=COLUMNS), products
+
+
+def generate_rows(
+    start_date: date,
+    days: int,
+    rng: random.Random,
+    products: list[Product],
+    *,
+    week_offset: int,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for day_offset in range(DAYS):
-        current_date = START_DATE + timedelta(days=day_offset)
-        week_index = day_offset // 7
+    for day_offset in range(days):
+        current_date = start_date + timedelta(days=day_offset)
+        week_index = week_offset + day_offset // 7
         daily_orders = daily_order_count(current_date, week_index, rng)
         for order_number in range(1, daily_orders + 1):
             store = choose_store(current_date, week_index, rng)
@@ -180,17 +216,73 @@ def generate_sample_data(
                     "unit_cost": product.unit_cost,
                 }
             )
+    return rows
 
-    dataframe = pd.DataFrame(rows, columns=COLUMNS)
-    csv_path = output / "retail_sales_orders.csv"
-    xlsx_path = output / "retail_sales_orders.xlsx"
+
+def generate_period2_fixture(output_dir: Path | str | None = None) -> dict[str, str]:
+    backend_dir = Path(__file__).resolve().parents[1]
+    output = Path(output_dir) if output_dir else backend_dir / "eval" / "fixtures"
+    output.mkdir(parents=True, exist_ok=True)
+
+    period1, products = build_period1_dataframe()
+    extension_rng = random.Random(PERIOD2_SEED)
+    extension_rows = generate_rows(
+        PERIOD2_START,
+        7,
+        extension_rng,
+        products,
+        week_offset=DAYS // 7,
+    )
+    extension = pd.DataFrame(extension_rows, columns=COLUMNS)
+    dataframe = pd.concat([period1, extension], ignore_index=True)
+
+    csv_path = output / "retail_sales_orders_period2.csv"
+    qa_output = output / "retail_sales_orders_period2.qa.json"
     dataframe.to_csv(csv_path, index=False, encoding="utf-8")
-    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-        dataframe.to_excel(writer, sheet_name="sales_orders", index=False)
-
-    qa = build_qa_summary(dataframe)
+    qa = build_qa_summary(
+        dataframe,
+        fixture_id="period2",
+        current_start=PERIOD2_START,
+        current_end=PERIOD2_END,
+        previous_start=CURRENT_START,
+        previous_end=CURRENT_END,
+    )
     qa_output.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"csv_path": str(csv_path), "xlsx_path": str(xlsx_path), "qa_path": str(qa_output)}
+    return {"csv_path": str(csv_path), "qa_path": str(qa_output)}
+
+
+def generate_zh_header_fixture(output_dir: Path | str | None = None) -> dict[str, str]:
+    """capture 用例数据（architecture.md §7 v0.13）：period1 数据改写为各列 display_name 表头。
+
+    中文表头才对别名编辑敏感（英文 canonical 表头恒为自身别名）；KPI 基准与 period1 同值。
+    """
+    backend_dir = Path(__file__).resolve().parents[1]
+    output = Path(output_dir) if output_dir else backend_dir / "eval" / "fixtures"
+    output.mkdir(parents=True, exist_ok=True)
+
+    period1, _products = build_period1_dataframe()
+    display_names = builtin_display_names()
+    missing = [column for column in COLUMNS if column not in display_names]
+    if missing:
+        raise ValueError(f"内置口径缺少字段显示名：{', '.join(missing)}")
+
+    csv_path = output / "retail_sales_orders_zh.csv"
+    qa_output = output / "retail_sales_orders_zh.qa.json"
+    period1.rename(columns=display_names).to_csv(csv_path, index=False, encoding="utf-8")
+    qa = build_qa_summary(period1, fixture_id="period1")
+    qa["fixture_id"] = "period1-zh"
+    qa["header_variant"] = "display_name"
+    qa_output.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"csv_path": str(csv_path), "qa_path": str(qa_output)}
+
+
+def builtin_display_names() -> dict[str, str]:
+    pack_path = (
+        Path(__file__).resolve().parents[1] / "app" / "context_packs" / "retail_operations_v1.json"
+    )
+    pack = json.loads(pack_path.read_text(encoding="utf-8"))
+    columns = pack["data_dictionary"]["tables"][0]["columns"]
+    return {column["name"]: column["display_name"] for column in columns}
 
 
 def daily_order_count(current_date: date, week_index: int, rng: random.Random) -> int:
@@ -210,6 +302,8 @@ def choose_store(current_date: date, week_index: int, rng: random.Random) -> Sto
             weight *= 1.45
         if store.store_id == "SH001" and CURRENT_START <= current_date <= CURRENT_END:
             weight *= 1.03
+        if store.store_id == "SH001" and PERIOD2_START <= current_date <= PERIOD2_END:
+            weight *= 0.50
         weights.append(weight)
     return rng.choices(STORES, weights=weights, k=1)[0]
 
@@ -218,7 +312,10 @@ def choose_product(current_date: date, rng: random.Random, products: list[Produc
     weights = []
     for product in products:
         weight = 1.0
-        if product.category_l1 == "童装" and CURRENT_START <= current_date <= CURRENT_END:
+        if product.category_l1 == "童装" and (
+            CURRENT_START <= current_date <= CURRENT_END
+            or PERIOD2_START <= current_date <= PERIOD2_END
+        ):
             weight *= 1.25
         if product.product_name.startswith(("童装T恤", "童装连衣裙", "儿童防晒外套")):
             weight *= 1.35
@@ -231,6 +328,8 @@ def choose_channel(current_date: date, rng: random.Random) -> str:
     weights = [0.46, 0.22, 0.14, 0.18]
     if CURRENT_START <= current_date <= CURRENT_END:
         weights = [0.38, 0.20, 0.27, 0.15]
+    if PERIOD2_START <= current_date <= PERIOD2_END:
+        weights = [0.28, 0.15, 0.45, 0.12]
     return rng.choices(channels, weights=weights, k=1)[0]
 
 
@@ -241,6 +340,8 @@ def choose_quantity(channel: str, rng: random.Random) -> int:
 
 
 def discount_rate(current_date: date, channel: str, rng: random.Random) -> float:
+    if channel == "抖音" and PERIOD2_START <= current_date <= PERIOD2_END:
+        return rng.uniform(0.48, 0.60)
     if channel == "抖音" and CURRENT_START <= current_date <= CURRENT_END:
         return rng.uniform(0.32, 0.46)
     if channel == "抖音":
@@ -260,7 +361,10 @@ def choose_status_and_refund(
     rng: random.Random,
 ) -> tuple[str, float]:
     refund_probability = 0.045
-    if product.category_l1 == "童装" and CURRENT_START <= current_date <= CURRENT_END:
+    if product.category_l1 == "童装" and (
+        CURRENT_START <= current_date <= CURRENT_END
+        or PERIOD2_START <= current_date <= PERIOD2_END
+    ):
         refund_probability = 0.145
     elif product.category_l1 == "童装":
         refund_probability = 0.035
@@ -279,11 +383,19 @@ def choose_customer_type(week_index: int, rng: random.Random) -> str:
     return "老客" if rng.random() < old_customer_share else "新客"
 
 
-def build_qa_summary(dataframe: pd.DataFrame) -> dict[str, Any]:
+def build_qa_summary(
+    dataframe: pd.DataFrame,
+    *,
+    fixture_id: str = "period1",
+    current_start: date = CURRENT_START,
+    current_end: date = CURRENT_END,
+    previous_start: date = PREVIOUS_START,
+    previous_end: date = PREVIOUS_END,
+) -> dict[str, Any]:
     frame = dataframe.copy()
     frame["order_date"] = pd.to_datetime(frame["order_date"])
-    current = window(frame, CURRENT_START, CURRENT_END)
-    previous = window(frame, PREVIOUS_START, PREVIOUS_END)
+    current = window(frame, current_start, current_end)
+    previous = window(frame, previous_start, previous_end)
     sh001_drop = sales_drop(previous, current, "SH001")
     kids_refund = refund_rate(current[current["category_l1"] == "童装"])
     douyin_current = current[current["channel"] == "抖音"]
@@ -292,11 +404,13 @@ def build_qa_summary(dataframe: pd.DataFrame) -> dict[str, Any]:
     weekday_orders = frame[frame["order_date"].dt.weekday < 5].groupby("order_date").size().mean()
     first_week = window(frame, START_DATE, START_DATE + timedelta(days=6))
     returning_lift = customer_share(current, "老客") - customer_share(first_week, "老客")
+    sh001_drop_threshold = -25 if fixture_id == "period1" else -10
+    maximum_row_count = 10000 if fixture_id == "period1" else 12000
 
     checks = {
-        "row_count_in_range": bool(8000 <= len(frame.index) <= 10000),
+        "row_count_in_range": bool(8000 <= len(frame.index) <= maximum_row_count),
         "required_columns_present": bool(frame.columns.tolist() == COLUMNS),
-        "sh001_sales_drop": bool(sh001_drop <= -25),
+        "sh001_sales_drop": bool(sh001_drop <= sh001_drop_threshold),
         "kids_refund_spike": bool(kids_refund >= 10),
         "douyin_aov_drop_with_order_lift": (
             percentage_change(aov(douyin_previous), aov(douyin_current)) <= -20
@@ -307,12 +421,29 @@ def build_qa_summary(dataframe: pd.DataFrame) -> dict[str, Any]:
     }
     checks["douyin_aov_drop_with_order_lift"] = bool(checks["douyin_aov_drop_with_order_lift"])
     return {
+        "schema_version": 2,
+        "fixture_id": fixture_id,
         "seed": SEED,
+        "extension_seed": PERIOD2_SEED if fixture_id == "period2" else None,
+        "order_count_rule": sorted(VALID_ORDER_STATUSES),
         "row_count": len(frame.index),
         "date_range": {
             "start": frame["order_date"].min().date().isoformat(),
             "end": frame["order_date"].max().date().isoformat(),
         },
+        "windows": {
+            "current": {"start": current_start.isoformat(), "end": current_end.isoformat()},
+            "previous": {"start": previous_start.isoformat(), "end": previous_end.isoformat()},
+        },
+        "core_kpis": {
+            "current": core_kpis(current),
+            "previous": core_kpis(previous),
+        },
+        "anomaly_entities": [
+            {"id": "sh001", "keywords": ["SH001", "徐汇"]},
+            {"id": "kids", "keywords": ["童装"]},
+            {"id": "douyin", "keywords": ["抖音"]},
+        ],
         "checks": checks,
         "metrics": {
             "sh001_sales_delta_pct": round(sh001_drop, 2),
@@ -336,7 +467,8 @@ def window(frame: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
 
 
 def order_count(frame: pd.DataFrame) -> int:
-    return int(frame["order_id"].nunique())
+    valid = frame[frame["order_status"].isin(VALID_ORDER_STATUSES)]
+    return int(valid["order_id"].nunique())
 
 
 def sales_amount(frame: pd.DataFrame) -> float:
@@ -347,6 +479,15 @@ def sales_amount(frame: pd.DataFrame) -> float:
 def aov(frame: pd.DataFrame) -> float:
     orders = order_count(frame)
     return 0.0 if orders == 0 else sales_amount(frame) / orders
+
+
+def core_kpis(frame: pd.DataFrame) -> dict[str, float | int]:
+    return {
+        "sales_amount": round(sales_amount(frame), 2),
+        "order_count": order_count(frame),
+        "average_order_value": round(aov(frame), 2),
+        "refund_rate": round(refund_rate(frame), 2),
+    }
 
 
 def refund_rate(frame: pd.DataFrame) -> float:
@@ -375,4 +516,14 @@ def percentage_change(previous: float, current: float) -> float:
 
 
 if __name__ == "__main__":
-    print(json.dumps(generate_sample_data(), ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "period1": generate_sample_data(),
+                "period2": generate_period2_fixture(),
+                "period1_zh": generate_zh_header_fixture(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )

@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@11.27.1",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit --project tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -26,9 +27,7 @@
     "eslint": "^9.14.0",
     "@eslint/js": "^9.14.0",
     "typescript-eslint": "^8.13.0",
-    "globals": "^15.12.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "globals": "^15.12.0",
+    "vitest": "^3.2.7"
   }
 }

@@ -6,7 +6,7 @@ from dataclasses import asdict
 from typing import Any
 
 from app.llm.client import LLMClientProtocol
-from app.modules.context_pack import load_default_context_pack
+from app.modules.context_pack import load_active_context_pack
 from app.modules.dataset_store import DatasetMaterializationError, materialize_table_to_sqlite
 from app.modules.report_composer import compose_report
 from app.modules.reporting import build_default_kpis, default_time_range
@@ -14,6 +14,7 @@ from app.modules.schemas import TableData
 from app.modules.sql_validator import SQLValidationError
 from app.modules.task_parser import context_pack_for_llm, sanitize_error, schema_for_llm
 from app.modules.tools import ToolRuntime, run_tool
+from app.timestamps import utc_now_iso
 
 DEFAULT_LIMITS = {"max_iterations": 12, "max_tokens": 50000, "max_duration_seconds": 300}
 HARD_LIMITS = {"max_iterations": 15, "max_tokens": 100000, "max_duration_seconds": 600}
@@ -29,9 +30,12 @@ def run_analysis_loop(
     llm_client: LLMClientProtocol,
     *,
     model_name: str | None = None,
+    history_context: dict[str, Any] | None = None,
+    context_pack: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    pack = context_pack if context_pack is not None else load_active_context_pack()
     try:
-        handle = materialize_table_to_sqlite(table)
+        handle = materialize_table_to_sqlite(table, context_pack=pack)
     except DatasetMaterializationError as exc:
         return failed_report(task, table, exc.code, exc.message)
 
@@ -42,6 +46,7 @@ def run_analysis_loop(
     warnings: list[dict[str, str]] = []
     summary = ""
     token_used = 0
+    loop_rounds = 0
     observation: dict[str, Any] | None = None
     status = "partial"
 
@@ -57,8 +62,11 @@ def run_analysis_loop(
             observation,
             iteration=iteration,
             max_iterations=limits["max_iterations"],
+            history_context=history_context,
+            context_pack=pack,
         )
         try:
+            loop_rounds += 1
             raw = llm_client.complete(messages)
         except Exception as exc:
             warnings.append(
@@ -133,8 +141,10 @@ def run_analysis_loop(
         "data_source": asdict(table.data_source_ref),
         "row_count": table.row_count,
         "query_engine": "sqlite",
-        "ran_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "ran_at": utc_now_iso(),
         "model": model_name or "configured",
+        "loop_rounds": loop_rounds,
+        "steps_recorded": len(analysis_steps),
         "iterations_used": len(analysis_steps),
         "token_used": token_used,
     }
@@ -153,6 +163,8 @@ def run_analysis_loop(
         analysis_steps=analysis_steps,
         metadata=metadata,
         query_results=runtime.queries,
+        history_context=history_context,
+        context_pack=pack,
     )
 
 
@@ -164,12 +176,21 @@ def build_loop_messages(
     *,
     iteration: int = 1,
     max_iterations: int = 8,
+    history_context: dict[str, Any] | None = None,
+    context_pack: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     iterations_left = max(0, max_iterations - iteration + 1)
-    payload = {
+    payload: dict[str, Any] = {
         "task": task,
         "schema_summary": schema_for_llm(schema_summary),
-        "context_pack": context_pack_for_llm(load_default_context_pack()),
+        "context_pack": context_pack_for_llm(
+            context_pack if context_pack is not None else load_active_context_pack()
+        ),
+    }
+    if history_context:
+        # 仅任务重跑且链上有上期报告时注入（architecture.md §3.3 / §6.3 槽位 7）。
+        payload["history_context"] = history_context
+    payload |= {
         "available_tools": {
             "query_data": {"args": {"sql": "SELECT ...", "summary": "optional string"}},
             "profile_column": {"args": {"column": "canonical column name"}},
@@ -245,6 +266,13 @@ SYSTEM_PROMPT = "\n".join(
         "  即使没穷尽所有维度也要 finish，不要继续探索",
         "- 每轮 user payload 的 state.iterations_left 是剩余轮次，",
         "  iterations_left <= 2 时只允许 record_finding 或 finish",
+        "",
+        "历史对照（仅当 user payload 含 history_context 时生效）：",
+        "- history_context 是本任务上期报告的基线：baseline_values 是上期各核心指标的值，",
+        "  last_run_summary 是上期摘要，previous_time_range 是上期时间窗",
+        "- 结论须对照上期基线判断延续或反转（如「连续两期下滑」），",
+        "  引用上期数值时必须注明来自上期报告",
+        "- 上期数值只用于对照，不得当作本期数据写入结论；本期数据一律以 query_data 结果为准",
     ]
 )
 
@@ -350,8 +378,10 @@ def failed_report(
         "metadata": {
             "data_source": asdict(table.data_source_ref),
             "row_count": table.row_count,
-            "ran_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "ran_at": utc_now_iso(),
             "model": "configured",
+            "loop_rounds": 0,
+            "steps_recorded": 0,
             "iterations_used": 0,
             "token_used": 0,
         },

@@ -3,10 +3,11 @@
 # 构建上下文 = 仓库根目录。
 
 # ---- stage 1: 构建前端 ----
-FROM node:20-alpine AS frontend
+FROM node:22-alpine AS frontend
 WORKDIR /frontend
-RUN npm install -g pnpm@9.15.9
-COPY frontend/package.json frontend/pnpm-lock.yaml* ./
+COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/pnpm-workspace.yaml ./
+# pnpm 版本以 package.json 的 packageManager 为唯一来源；pnpm-workspace.yaml 含依赖构建白名单
+RUN npm install -g "$(node -p "require('./package.json').packageManager")"
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build

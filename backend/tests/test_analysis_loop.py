@@ -4,6 +4,7 @@ import json
 from dataclasses import asdict
 
 from app.modules.analysis_loop import run_analysis_loop
+from app.modules.dataset_store import DatasetMaterializationError
 from app.modules.reporting import default_structured_task
 from app.modules.sample_data import load_retail_sample
 
@@ -17,6 +18,16 @@ class FakeLLMClient:
         self.messages.append(messages)
         if not self.responses:
             raise AssertionError("FakeLLMClient has no queued response")
+        return self.responses.pop(0)
+
+
+class RawLLMClient:
+    def __init__(self, responses: list[str]):
+        self.responses = responses
+
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        if not self.responses:
+            raise AssertionError("RawLLMClient has no queued response")
         return self.responses.pop(0)
 
 
@@ -111,6 +122,8 @@ def test_analysis_loop_generates_findings_charts_and_steps_from_fixed_tools():
         "record_finding",
         "finish",
     ]
+    assert report["metadata"]["loop_rounds"] == 6
+    assert report["metadata"]["steps_recorded"] == 6
     assert report["metadata"]["iterations_used"] == 6
     assert [kpi["name"] for kpi in report["kpis"]] == ["销售额", "订单数", "客单价", "退款率"]
     assert report["metadata"]["model"] == "configured"
@@ -204,6 +217,27 @@ def test_analysis_loop_records_sql_rejection_and_allows_retry():
     # 拒绝时保留模型提交的原 SQL，方便诊断和给模型下一轮反馈
     assert report["analysis_steps"][0]["sql"] == "DELETE FROM sales_orders"
     assert report["findings"][0]["text"] == "模型改写 SQL 后成功取得订单数。"
+    assert report["metadata"]["loop_rounds"] == 4
+    assert report["metadata"]["steps_recorded"] == 4
+    assert report["metadata"]["iterations_used"] == 4
+
+
+def test_analysis_loop_counts_parse_failure_as_round_and_recorded_step():
+    table = load_retail_sample()
+    llm = RawLLMClient(
+        [
+            "not a json tool call",
+            '{"tool":"finish","args":{"summary":"解析失败后完成。"}}',
+        ]
+    )
+
+    report = run_analysis_loop(table, sample_task(), llm)
+
+    assert report["status"] == "completed"
+    assert report["analysis_steps"][0]["code"] == "LLM_PARSE_FAILED"
+    assert report["metadata"]["loop_rounds"] == 2
+    assert report["metadata"]["steps_recorded"] == 2
+    assert report["metadata"]["iterations_used"] == 2
 
 
 def test_analysis_loop_outputs_partial_report_when_iteration_budget_is_exceeded():
@@ -230,7 +264,60 @@ def test_analysis_loop_outputs_partial_report_when_iteration_budget_is_exceeded(
     assert report["warnings"] == [
         {"code": "LOOP_BUDGET_EXCEEDED", "message": "分析因资源限制未完成，以下为部分结论。"}
     ]
+    assert report["metadata"]["loop_rounds"] == 1
+    assert report["metadata"]["steps_recorded"] == 1
     assert report["metadata"]["iterations_used"] == 1
+
+
+def test_analysis_loop_counts_token_budget_round_without_recorded_step():
+    table = load_retail_sample()
+    task = sample_task()
+    task["execution_limits"]["max_tokens"] = 1
+    llm = FakeLLMClient([{"tool": "finish", "args": {"summary": "不会进入步骤记录。"}}])
+
+    report = run_analysis_loop(table, task, llm)
+
+    assert report["status"] == "partial"
+    assert report["warnings"] == [
+        {"code": "LOOP_BUDGET_EXCEEDED", "message": "分析因资源限制未完成，以下为部分结论。"}
+    ]
+    assert report["metadata"]["loop_rounds"] == 1
+    assert report["metadata"]["steps_recorded"] == 0
+    assert report["metadata"]["iterations_used"] == 0
+
+
+def test_analysis_loop_counts_no_round_when_duration_expires_before_first_call(monkeypatch):
+    table = load_retail_sample()
+    task = sample_task()
+    task["execution_limits"]["max_duration_seconds"] = 1
+    timestamps = iter([0.0, 2.0])
+    monkeypatch.setattr("app.modules.analysis_loop.time.monotonic", lambda: next(timestamps))
+
+    report = run_analysis_loop(table, task, FakeLLMClient([]))
+
+    assert report["status"] == "partial"
+    assert report["metadata"]["loop_rounds"] == 0
+    assert report["metadata"]["steps_recorded"] == 0
+    assert report["metadata"]["iterations_used"] == 0
+
+
+def test_analysis_loop_failed_materialization_has_zero_counts(monkeypatch):
+    table = load_retail_sample()
+
+    def fail_materialization(_table, **_kwargs):
+        raise DatasetMaterializationError("CSV_KEY_FIELD_MISSING", "缺少关键字段")
+
+    monkeypatch.setattr(
+        "app.modules.analysis_loop.materialize_table_to_sqlite",
+        fail_materialization,
+    )
+
+    report = run_analysis_loop(table, sample_task(), FakeLLMClient([]))
+
+    assert report["status"] == "failed"
+    assert report["metadata"]["loop_rounds"] == 0
+    assert report["metadata"]["steps_recorded"] == 0
+    assert report["metadata"]["iterations_used"] == 0
 
 
 def test_analysis_loop_clamps_execution_limits_to_hard_caps():
@@ -257,6 +344,8 @@ def test_analysis_loop_clamps_execution_limits_to_hard_caps():
 
     assert report["status"] == "partial"
     assert len(report["findings"]) == 15
+    assert report["metadata"]["loop_rounds"] == 15
+    assert report["metadata"]["steps_recorded"] == 15
     assert report["metadata"]["iterations_used"] == 15
     assert report["warnings"] == [
         {"code": "LOOP_BUDGET_EXCEEDED", "message": "分析因资源限制未完成，以下为部分结论。"}
@@ -273,6 +362,8 @@ def test_analysis_loop_returns_partial_report_when_llm_call_fails():
     report = run_analysis_loop(table, sample_task(), FailingLLMClient())
 
     assert report["status"] == "partial"
+    assert report["metadata"]["loop_rounds"] == 1
+    assert report["metadata"]["steps_recorded"] == 0
     assert report["metadata"]["iterations_used"] == 0
     assert report["warnings"][0]["code"] == "LLM_CALL_FAILED"
     assert "sk-test-secret" not in report["warnings"][0]["message"]
@@ -311,3 +402,102 @@ def test_analysis_loop_records_tool_invocation_failure_with_real_tool_name():
     assert report["analysis_steps"][0]["status"] == "failed"
     assert report["analysis_steps"][0]["tool"] == "record_finding"
     assert report["analysis_steps"][0]["code"] == "TOOL_INVOCATION_FAILED"
+    assert report["metadata"]["loop_rounds"] == 2
+    assert report["metadata"]["steps_recorded"] == 2
+    assert report["metadata"]["iterations_used"] == 2
+
+
+def history_context_fixture() -> dict:
+    return {
+        "previous_report_id": "r-prev",
+        "previous_ran_at": "2026-09-01T10:00:00+00:00",
+        "previous_status": "completed",
+        "previous_time_range": {
+            "current_start": "2026-05-11",
+            "current_end": "2026-05-17",
+            "previous_start": "2026-05-04",
+            "previous_end": "2026-05-10",
+        },
+        "last_run_summary": "上期：徐汇店销售额环比 -38.7%。",
+        "baseline_values": {"销售额": 390037.19, "订单数": 1288, "客单价": 302.82, "退款率": 7.01},
+    }
+
+
+def test_loop_messages_include_history_context_only_when_provided():
+    """history_context 仅在提供时注入 user payload，位置紧随 context_pack。"""
+    from app.modules.analysis_loop import build_loop_messages
+    from app.modules.dataset_store import materialize_table_to_sqlite
+    from app.modules.tools import ToolRuntime
+
+    handle = materialize_table_to_sqlite(load_retail_sample())
+    runtime = ToolRuntime(handle=handle)
+    task = sample_task(max_iterations=12)
+
+    with_context = build_loop_messages(
+        task,
+        handle.schema_summary,
+        runtime,
+        observation=None,
+        iteration=1,
+        max_iterations=12,
+        history_context=history_context_fixture(),
+    )
+    payload = json.loads(with_context[1]["content"])
+    assert payload["history_context"] == history_context_fixture()
+    keys = list(payload)
+    assert keys.index("history_context") == keys.index("context_pack") + 1
+
+    without_context = build_loop_messages(
+        task,
+        handle.schema_summary,
+        runtime,
+        observation=None,
+        iteration=1,
+        max_iterations=12,
+    )
+    assert "history_context" not in json.loads(without_context[1]["content"])
+
+
+def test_analysis_loop_system_prompt_carries_history_context_rule():
+    from app.modules.analysis_loop import SYSTEM_PROMPT
+
+    assert "history_context" in SYSTEM_PROMPT
+    assert "baseline_values" in SYSTEM_PROMPT
+    assert "来自上期报告" in SYSTEM_PROMPT
+
+
+def test_analysis_loop_report_carries_previous_comparison_with_history_context():
+    table = load_retail_sample()
+    llm = FakeLLMClient([{"tool": "finish", "args": {"summary": "对比上期完成。"}}])
+
+    report = run_analysis_loop(
+        table,
+        sample_task(),
+        llm,
+        history_context=history_context_fixture(),
+    )
+
+    assert report["status"] == "completed"
+    sent_payload = json.loads(llm.messages[0][1]["content"])
+    assert sent_payload["history_context"]["previous_report_id"] == "r-prev"
+    comparison = report["previous_comparison"]
+    assert comparison["previous_report_id"] == "r-prev"
+    assert comparison["same_period"] is True
+    assert [entry["name"] for entry in comparison["baseline"]] == [
+        "销售额",
+        "订单数",
+        "客单价",
+        "退款率",
+    ]
+    assert all(entry["delta_value"] == 0.0 for entry in comparison["baseline"])
+    assert comparison["baseline"][3]["delta_unit"] == "pp"
+
+
+def test_analysis_loop_report_has_no_previous_comparison_without_history_context():
+    table = load_retail_sample()
+    llm = FakeLLMClient([{"tool": "finish", "args": {"summary": "首期报告。"}}])
+
+    report = run_analysis_loop(table, sample_task(), llm)
+
+    assert "previous_comparison" not in report
+    assert "history_context" not in json.loads(llm.messages[0][1]["content"])

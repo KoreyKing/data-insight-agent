@@ -6,7 +6,7 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.llm.client import LLMClientProtocol, get_llm_client
-from app.modules.context_pack import load_default_context_pack
+from app.modules.context_pack import load_active_context_pack
 from app.modules.reporting import default_structured_task
 from app.modules.schemas import ColumnSummary, SchemaSummary
 
@@ -40,16 +40,17 @@ def parse_analysis_goal(
     *,
     llm_client: LLMClientProtocol | None = None,
     settings: Settings | None = None,
+    context_pack: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    base_task = default_structured_task(analysis_goal, data_source_ref)
+    pack = context_pack if context_pack is not None else load_active_context_pack()
+    base_task = default_structured_task(analysis_goal, data_source_ref, context_pack=pack)
     resolved_settings = settings or get_settings()
     client = llm_client if llm_client is not None else get_llm_client(resolved_settings)
 
     if client is None:
         return with_warning(base_task, "LLM_NOT_CONFIGURED")
 
-    context_pack = load_default_context_pack()
-    messages = build_parse_messages(analysis_goal, schema_summary, context_pack)
+    messages = build_parse_messages(analysis_goal, schema_summary, pack)
 
     try:
         raw = client.complete(messages)

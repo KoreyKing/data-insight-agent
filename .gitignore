@@ -24,7 +24,6 @@ dist/
 # Data & DB
 data/*
 !data/.gitkeep
-backend/.sample-data-qa.json
 *.db
 *.sqlite
 *.sqlite3

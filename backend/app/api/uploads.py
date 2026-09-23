@@ -14,6 +14,7 @@ from app.api.runtime import (
     error_response,
     sanitize_filename,
 )
+from app.modules.context_pack import load_active_context_pack
 from app.modules.file_ingestion import IngestionError, load_table_from_path, table_to_response
 from app.modules.sample_data import load_retail_sample
 
@@ -24,7 +25,7 @@ UPLOAD_FILE = File(...)
 @router.get("/sample-dataset")
 def sample_dataset() -> dict[str, Any]:
     table = load_retail_sample()
-    return table_to_response(table)
+    return table_to_response(table, load_active_context_pack())
 
 
 @router.post("/uploads")
@@ -44,7 +45,7 @@ def upload_dataset(file: Annotated[UploadFile, UPLOAD_FILE]):
         return error_response(exc)
 
     UPLOAD_SESSIONS[session_id] = {"path": str(destination), "filename": filename}
-    payload = table_to_response(table)
+    payload = table_to_response(table, load_active_context_pack())
     payload["session_id"] = session_id
     return payload
 
@@ -68,6 +69,6 @@ def uploaded_dataset(session_id: str, sheet: str | None = None):
     except IngestionError as exc:
         return error_response(exc)
 
-    payload = table_to_response(table)
+    payload = table_to_response(table, load_active_context_pack())
     payload["session_id"] = session_id
     return payload

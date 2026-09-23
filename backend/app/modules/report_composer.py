@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.modules.context_pack import context_pack_identity
+from app.modules.context_pack import (
+    anomaly_thresholds,
+    context_pack_identity,
+    load_active_context_pack,
+)
+from app.modules.history_context import build_previous_comparison
 from app.modules.query_engine import QueryResult
 from app.modules.tools import build_echarts_spec, numeric, query_records
 
@@ -22,12 +27,17 @@ def compose_report(
     metadata: dict[str, Any],
     analysis_steps: list[dict[str, Any]] | None = None,
     query_results: dict[str, QueryResult] | None = None,
+    history_context: dict[str, Any] | None = None,
+    context_pack: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """统一报告 payload 出口：固定报告与 Loop 报告共用。
 
-    职责：规范化 findings/kpis/metadata、去重 warnings、对缺图 finding 自动配图。
+    职责：规范化 findings/kpis/metadata、去重 warnings、对缺图 finding 自动配图；
+    传入 history_context（任务重跑且链上有上期报告）时确定性组装顶层 previous_comparison
+    （architecture.md §3.3），首期 / 未归属报告不出现该键。
     契约保持不变：{status,title,analysis_goal,summary,kpis,findings,warnings,metadata,...}。
     """
+    pack = context_pack if context_pack is not None else load_active_context_pack()
     report: dict[str, Any] = {
         "status": status,
         "title": title,
@@ -37,10 +47,17 @@ def compose_report(
         "findings": _auto_chart_findings(findings, query_results or {}),
         "warnings": dedupe_warnings(warnings),
         "metadata": dict(metadata),
-        **context_pack_identity(),
+        **context_pack_identity(pack),
     }
     if analysis_steps is not None:
         report["analysis_steps"] = analysis_steps
+    if history_context is not None:
+        report["previous_comparison"] = build_previous_comparison(
+            report["kpis"],
+            report["metadata"].get("time_range"),
+            history_context,
+            anomaly_thresholds(pack),
+        )
     return report
 
 

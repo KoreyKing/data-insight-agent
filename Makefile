@@ -1,4 +1,4 @@
-.PHONY: check backend-check frontend-check backend-dev frontend-dev dev smoke-local smoke status
+.PHONY: check backend-check frontend-check eval eval-baseline backend-dev frontend-dev dev smoke-local smoke status
 
 check: backend-check frontend-check
 
@@ -6,7 +6,13 @@ backend-check:
 	cd backend && uv run ruff check . && uv run pytest
 
 frontend-check:
-	cd frontend && pnpm typecheck && pnpm lint && pnpm build
+	cd frontend && pnpm typecheck && pnpm lint && pnpm test && pnpm build
+
+eval:
+	cd backend && uv run python -m eval.runner
+
+eval-baseline:
+	cd backend && uv run python -m eval.runner --update-baseline
 
 backend-dev:
 	cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

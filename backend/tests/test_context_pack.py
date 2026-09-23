@@ -8,6 +8,7 @@ import pytest
 from app.modules.context_pack import (
     ContextPackError,
     build_field_aliases,
+    context_pack_display_names,
     load_default_context_pack,
     validate_context_pack,
 )
@@ -79,3 +80,40 @@ def test_build_field_aliases_includes_context_pack_column_names():
 
     assert "net_sales_amount" in aliases
     assert {"net_sales_amount", "销售额", "实收销售额"}.issubset(aliases["net_sales_amount"])
+
+
+def test_context_pack_display_names_returns_business_labels_with_name_fallback():
+    display_names = context_pack_display_names(
+        {
+            "data_dictionary": {
+                "tables": [
+                    {
+                        "columns": [
+                            {"name": "order_date", "display_name": "订单日期"},
+                            {"name": "legacy_column"},
+                        ]
+                    }
+                ]
+            }
+        }
+    )
+
+    assert display_names == {"order_date": "订单日期", "legacy_column": "legacy_column"}
+
+
+def test_default_context_pack_columns_have_display_names():
+    pack = load_default_context_pack()
+    columns = pack["data_dictionary"]["tables"][0]["columns"]
+
+    assert all(
+        isinstance(column["display_name"], str) and column["display_name"].strip()
+        for column in columns
+    )
+
+
+def test_context_pack_rejects_blank_display_name():
+    broken = deepcopy(load_default_context_pack())
+    broken["data_dictionary"]["tables"][0]["columns"][0]["display_name"] = ""
+
+    with pytest.raises(ContextPackError, match="display_name"):
+        validate_context_pack(broken)

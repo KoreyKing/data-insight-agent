@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,13 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 from app.main import app
+
+
+def valid_csv_bytes() -> bytes:
+    return (
+        "订单日期,销售额,门店,类目,渠道\n"
+        "2026-05-11,1000,上海徐汇旗舰店,童装,线下\n"
+    ).encode()
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +35,8 @@ def test_sample_dataset_returns_preview_and_valid_profile():
     assert 8000 <= payload["row_count"] <= 10000
 
 
-def test_upload_csv_returns_session_preview_and_profile(tmp_path: Path):
+def test_upload_csv_returns_session_preview_and_profile(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("app.api.uploads.UPLOAD_DIR", tmp_path / "uploads")
     source = tmp_path / "orders.csv"
     source.write_text(
         "订单日期,销售额,门店,类目,渠道\n2026-05-11,1000,上海徐汇旗舰店,童装,线下\n",
@@ -48,6 +57,87 @@ def test_upload_csv_returns_session_preview_and_profile(tmp_path: Path):
     assert payload["context_pack_version"] == "1.0.0"
     assert payload["field_profile"]["is_valid"] is True
     assert payload["preview"]["head"][0]["门店"] == "上海徐汇旗舰店"
+    assert payload["data_source_ref"]["location"] == "orders.csv"
+    assert str(tmp_path) not in response.text
+
+
+def test_run_report_from_upload_sanitizes_success_response_path(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("app.api.uploads.UPLOAD_DIR", tmp_path / "uploads")
+    client = TestClient(app)
+
+    upload_response = client.post(
+        "/api/v1/uploads",
+        files={"file": ("orders.csv", valid_csv_bytes(), "text/csv")},
+    )
+    assert upload_response.status_code == 200
+
+    response = client.post(
+        "/api/v1/reports/run",
+        json={
+            "analysis_goal": "帮我生成周度经营复盘",
+            "data_source_ref": upload_response.json()["data_source_ref"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()) == {"report_id", "report"}
+    assert response.json()["report"]["metadata"]["data_source"]["location"] == "orders.csv"
+    assert str(tmp_path) not in response.text
+
+
+def test_run_report_sanitizes_failed_response_path(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("app.api.uploads.UPLOAD_DIR", tmp_path / "uploads")
+    client = TestClient(app)
+    upload_response = client.post(
+        "/api/v1/uploads",
+        files={"file": ("orders.csv", valid_csv_bytes(), "text/csv")},
+    )
+    assert upload_response.status_code == 200
+
+    def failed_report(table, task, *, context_pack=None):
+        return "failed-report", {
+            "status": "failed",
+            "metadata": {"data_source": asdict(table.data_source_ref)},
+        }
+
+    monkeypatch.setattr("app.api.reports.execute_report_run", failed_report)
+    response = client.post(
+        "/api/v1/reports/run",
+        json={
+            "analysis_goal": "帮我生成周度经营复盘",
+            "data_source_ref": upload_response.json()["data_source_ref"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert set(response.json()) == {"code", "report"}
+    assert response.json()["code"] == "CSV_KEY_FIELD_MISSING"
+    assert response.json()["report"]["metadata"]["data_source"]["location"] == "orders.csv"
+    assert str(tmp_path) not in response.text
+
+
+def test_parse_uploaded_task_sanitizes_data_source_path(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("app.api.uploads.UPLOAD_DIR", tmp_path / "uploads")
+    client = TestClient(app)
+
+    upload_response = client.post(
+        "/api/v1/uploads",
+        files={"file": ("orders.csv", valid_csv_bytes(), "text/csv")},
+    )
+    assert upload_response.status_code == 200
+
+    response = client.post(
+        "/api/v1/tasks/parse",
+        json={
+            "analysis_goal": "帮我生成周度经营复盘",
+            "data_source_ref": upload_response.json()["data_source_ref"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task"]["data_source_ref"]["location"] == "orders.csv"
+    assert str(tmp_path) not in response.text
+    assert str(Path.cwd()) not in response.text
 
 
 def test_upload_xlsx_and_switch_sheet(tmp_path: Path):
@@ -134,6 +224,26 @@ def test_parse_task_uses_default_template_without_llm_configuration(monkeypatch)
     ]
 
 
+def test_tasks_parse_literal_route_still_resolves():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/tasks/parse",
+        json={
+            "analysis_goal": "帮我生成周度经营复盘",
+            "data_source_ref": {
+                "id": "sample-retail",
+                "type": "csv",
+                "name": "sample",
+                "location": "sample",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task"]["analysis_goal"] == "帮我生成周度经营复盘"
+
+
 def test_model_status_not_configured_without_env(monkeypatch):
     for name in ["LLM_API_KEY", "LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL"]:
         monkeypatch.delenv(name, raising=False)
@@ -185,6 +295,7 @@ def test_run_report_returns_traceable_findings_for_sample_dataset():
 
     assert response.status_code == 200
     payload = response.json()
+    assert set(payload) == {"report_id", "report"}
     assert payload["report"]["title"] == "周度零售经营复盘"
     assert payload["report"]["kpis"]
     assert payload["report"]["findings"]
@@ -197,6 +308,11 @@ def test_run_report_returns_traceable_findings_for_sample_dataset():
         assert evidence["validated_by"] == "sql_validator"
         assert finding["chart"]["echarts_spec"]["series"][0]["data"]
     assert payload["report"]["metadata"]["data_source"]["type"] == "csv"
+    assert payload["report"]["metadata"]["loop_rounds"] == 0
+    assert payload["report"]["metadata"]["steps_recorded"] == 0
+    assert payload["report"]["metadata"]["iterations_used"] == 0
+    # 体验模式固定报告的 warning 码是契约项（architecture.md §3.3 v0.17）
+    assert [warning["code"] for warning in payload["report"]["warnings"]] == ["FALLBACK_REPORT"]
 
 
 def test_run_report_uses_analysis_loop_when_llm_is_configured(monkeypatch):
@@ -218,7 +334,9 @@ def test_run_report_uses_analysis_loop_when_llm_is_configured(monkeypatch):
         def complete(self, messages):
             return json.dumps(self.responses.pop(0), ensure_ascii=False)
 
-    monkeypatch.setattr("app.api.reports.get_llm_client", lambda _settings=None: FakeLLMClient())
+    monkeypatch.setattr(
+        "app.modules.report_runner.get_llm_client", lambda _settings=None: FakeLLMClient()
+    )
     client = TestClient(app)
 
     response = client.post(
@@ -246,6 +364,8 @@ def test_run_report_uses_analysis_loop_when_llm_is_configured(monkeypatch):
     assert report["summary"] == "Analysis Loop 已完成。"
     assert report["findings"][0]["text"] == "样例数据已进入 Analysis Loop。"
     assert report["analysis_steps"][0]["tool"] == "record_finding"
+    assert report["metadata"]["loop_rounds"] == 2
+    assert report["metadata"]["steps_recorded"] == 2
     assert report["metadata"]["iterations_used"] == 2
     # composer 统一出口：Loop 报告补齐 context_pack 身份与 byline 所需 time_range
     assert report["context_pack_name"] == "Retail Operations"

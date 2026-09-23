@@ -8,7 +8,7 @@ import type {
   StructuredTask,
 } from '../api/client'
 
-const DEFAULT_LIMITS = { max_iterations: 8, max_tokens: 50000, max_duration_seconds: 300 }
+const DEFAULT_LIMITS = { max_iterations: 12, max_tokens: 50000, max_duration_seconds: 300 }
 const EMPTY_PROFILE: FieldProfile = {
   is_valid: false,
   missing_key_fields: [],
@@ -53,16 +53,74 @@ export function reportDetailToView(
   }
 }
 
-export function formatHistoryDate(value: string | null | undefined): string {
+// 时刻展示（architecture.md §2.4）：后端一律给带偏移的 UTC ISO 串，这里按查看者浏览器的本地时区格式化。
+// options.timeZone 仅供测试固定时区；页面调用不传，取浏览器时区。空值显示「—」。
+// 无法解析或不带偏移的串原样返回：无偏移串的时区无从判断，换算只会静默出错。
+type FormatOptions = { timeZone?: string }
+
+const OFFSET_SUFFIX = /(?:Z|[+-]\d{2}:?\d{2})$/i
+
+export function formatHistoryDate(
+  value: string | null | undefined,
+  { timeZone }: FormatOptions = {},
+): string {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = parseInstant(value)
+  if (!date) return value
   return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone,
   }).format(date)
+}
+
+// 报告署名、运行信息与证据运行时间：YYYY-MM-DD HH:mm:ss
+export function formatDateTime(value: string | null | undefined, options: FormatOptions = {}): string {
+  const parts = localParts(value, options)
+  if (typeof parts === 'string') return parts
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`
+}
+
+// 结论脚注：HH:mm:ss
+export function formatClock(value: string | null | undefined, options: FormatOptions = {}): string {
+  const parts = localParts(value, options)
+  if (typeof parts === 'string') return parts
+  return `${parts.hour}:${parts.minute}:${parts.second}`
+}
+
+function parseInstant(value: string): Date | null {
+  if (!OFFSET_SUFFIX.test(value.trim())) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function localParts(
+  value: string | null | undefined,
+  { timeZone }: FormatOptions,
+): Record<Intl.DateTimeFormatPartTypes, string> | string {
+  if (!value) return '—'
+  const date = parseInstant(value)
+  if (!date) return value
+  // en-GB 默认 24 小时制，hourCycle 再显式钉一次；个别引擎午夜给出 "24" 时归零。
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    timeZone,
+  }).formatToParts(date)
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value])) as Record<
+    Intl.DateTimeFormatPartTypes,
+    string
+  >
+  if (byType.hour === '24') byType.hour = '00'
+  return byType
 }
 
 export function statusLabel(status: string | null | undefined): string {

@@ -343,6 +343,7 @@ def test_llm_config_test_endpoint_success_and_failure_do_not_persist(
 
 def test_app_db_url_defaults_and_env_override(monkeypatch, tmp_path: Path):
     isolated_config_path(monkeypatch, tmp_path)
+    monkeypatch.delenv("APP_DB_URL")
 
     assert get_settings().app_db_url == "sqlite:///./data/app.db"
 

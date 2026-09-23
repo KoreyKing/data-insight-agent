@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
 from typing import Any
 
 import pandas as pd
 
-from app.modules.context_pack import context_pack_identity
+from app.modules.context_pack import context_pack_identity, load_active_context_pack
 from app.modules.dataset_store import (
     DatasetHandle,
     DatasetMaterializationError,
@@ -16,14 +15,20 @@ from app.modules.query_engine import QueryResult, run_validated_query
 from app.modules.report_composer import compose_report
 from app.modules.schemas import TableData
 from app.modules.sql_validator import SQLValidationError
+from app.timestamps import utc_now_iso
 
 DEFAULT_METRICS = ["销售额", "订单数", "客单价", "退款率"]
 DEFAULT_DIMENSIONS = ["日期", "门店", "商品类目", "渠道"]
 
 
-def default_structured_task(analysis_goal: str, data_source_ref: dict[str, Any]) -> dict[str, Any]:
+def default_structured_task(
+    analysis_goal: str,
+    data_source_ref: dict[str, Any],
+    *,
+    context_pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
-        **context_pack_identity(),
+        **context_pack_identity(context_pack),
         "task_title": "周度零售经营复盘",
         "data_source_ref": data_source_ref,
         "analysis_goal": analysis_goal,
@@ -40,9 +45,17 @@ def default_structured_task(analysis_goal: str, data_source_ref: dict[str, Any])
     }
 
 
-def generate_traceable_report(table: TableData, analysis_goal: str) -> dict[str, Any]:
+def generate_traceable_report(
+    table: TableData,
+    analysis_goal: str,
+    *,
+    history_context: dict[str, Any] | None = None,
+    context_pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    # 一次运行只解析一次活动包：物化列集与报告口径版本同源（§6.4 单次运行同源）。
+    pack = context_pack if context_pack is not None else load_active_context_pack()
     try:
-        handle = materialize_table_to_sqlite(table)
+        handle = materialize_table_to_sqlite(table, context_pack=pack)
     except DatasetMaterializationError as exc:
         return {
             "status": "failed",
@@ -85,12 +98,16 @@ def generate_traceable_report(table: TableData, analysis_goal: str) -> dict[str,
         kpis=kpis,
         findings=findings,
         warnings=[{"code": "FALLBACK_REPORT", "message": "当前为无 LLM 的固定报告闭环。"}],
+        history_context=history_context,
+        context_pack=pack,
         metadata={
             "data_source": asdict(table.data_source_ref),
             "row_count": table.row_count,
             "query_engine": "sqlite",
-            "ran_at": datetime.now().isoformat(timespec="seconds"),
+            "ran_at": utc_now_iso(),
             "model": "not_configured",
+            "loop_rounds": 0,
+            "steps_recorded": 0,
             "iterations_used": 0,
             "token_used": 0,
             "time_range": {
@@ -428,7 +445,7 @@ def evidence_from_result(result: QueryResult) -> dict[str, Any]:
     return {
         "sql": result.sql,
         "data_source": "sales_orders",
-        "ran_at": datetime.now().isoformat(timespec="seconds"),
+        "ran_at": utc_now_iso(),
         "exec_ms": result.exec_ms,
         "row_count": result.row_count,
         "validated_by": "sql_validator",

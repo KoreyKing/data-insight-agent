@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "questions": [
+    {
+      "id": "q1_weekly_review",
+      "goal": "帮我生成周度销售经营回顾，重点关注异常门店、商品类目和渠道，并给出可核对的数据依据。",
+      "data": "sample",
+      "flow": "run",
+      "hard_assertions": [
+        "status_completed",
+        "kpi_values_match",
+        "finding_sql_replay",
+        "anomaly_coverage",
+        "count_invariants"
+      ],
+      "observations": [
+        "anomaly_full_hit",
+        "finding_count",
+        "finding_type_distribution",
+        "token_used",
+        "duration_seconds",
+        "pack_prompt_estimated_tokens"
+      ]
+    },
+    {
+      "id": "q2_anomaly_diagnosis",
+      "goal": "诊断最近一周最重要的经营异常，优先核查徐汇门店、童装退款和抖音渠道，逐条给出 SQL 依据后再总结。",
+      "data": "sample",
+      "flow": "run",
+      "hard_assertions": [
+        "status_completed",
+        "kpi_values_match",
+        "finding_sql_replay",
+        "anomaly_coverage",
+        "count_invariants"
+      ],
+      "observations": [
+        "anomaly_full_hit",
+        "finding_count",
+        "finding_type_distribution",
+        "token_used",
+        "duration_seconds",
+        "pack_prompt_estimated_tokens"
+      ]
+    },
+    {
+      "id": "q3_rerun_previous_comparison",
+      "goal": "帮我生成周度销售经营回顾，重点关注异常门店、商品类目和渠道，并给出可核对的数据依据。",
+      "data": "fixtures/retail_sales_orders_period2.csv",
+      "flow": "rerun",
+      "founding": {
+        "data": "sample"
+      },
+      "hard_assertions": [
+        "status_completed",
+        "kpi_values_match",
+        "finding_sql_replay",
+        "anomaly_coverage",
+        "count_invariants",
+        "previous_comparison_present",
+        "previous_report_resolvable",
+        "previous_comparison_delta_math",
+        "same_period_false"
+      ],
+      "observations": [
+        "anomaly_full_hit",
+        "finding_count",
+        "finding_type_distribution",
+        "token_used",
+        "duration_seconds",
+        "pack_prompt_estimated_tokens",
+        "previous_reference_signal"
+      ]
+    },
+    {
+      "id": "q4_capture_alias_edit",
+      "goal": "帮我生成周度销售经营回顾，重点关注异常门店、商品类目和渠道，并给出可核对的数据依据。",
+      "data": "fixtures/retail_sales_orders_zh.csv",
+      "flow": "capture",
+      "pack_edit": {
+        "column_aliases": {
+          "channel": [
+            "投放渠道"
+          ]
+        }
+      },
+      "hard_assertions": [
+        "status_completed",
+        "kpi_values_match",
+        "finding_sql_replay",
+        "count_invariants",
+        "capture_field_unrecognized",
+        "capture_version_traced",
+        "capture_control"
+      ],
+      "observations": [
+        "anomaly_coverage",
+        "anomaly_full_hit",
+        "finding_count",
+        "finding_type_distribution",
+        "token_used",
+        "duration_seconds",
+        "pack_prompt_estimated_tokens",
+        "capture_narrative_signal"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,990 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-18",
+  "model": {
+    "provider": "deepseek",
+    "name": "deepseek-flash"
+  },
+  "context_pack": {
+    "name": "Retail Operations",
+    "version": "1.0.0"
+  },
+  "questions": [
+    {
+      "id": "q1_weekly_review",
+      "passed": true,
+      "hard_assertions": [
+        {
+          "id": "status_completed",
+          "passed": true,
+          "expected": "completed",
+          "actual": "completed",
+          "details": ""
+        },
+        {
+          "id": "kpi_values_match",
+          "passed": true,
+          "expected": {
+            "销售额": {
+              "current": 390037.19,
+              "previous": 414870.51
+            },
+            "订单数": {
+              "current": 1288,
+              "previous": 1236
+            },
+            "客单价": {
+              "current": 302.82,
+              "previous": 335.66
+            },
+            "退款率": {
+              "current": 7.01,
+              "previous": 4.77
+            }
+          },
+          "actual": {
+            "销售额": {
+              "current": 390037.19,
+              "previous": 414870.51,
+              "unit": "元"
+            },
+            "订单数": {
+              "current": 1288.0,
+              "previous": 1236.0,
+              "unit": "单"
+            },
+            "客单价": {
+              "current": 302.82,
+              "previous": 335.66,
+              "unit": "元"
+            },
+            "退款率": {
+              "current": 7.01,
+              "previous": 4.77,
+              "unit": "%"
+            }
+          },
+          "details": ""
+        },
+        {
+          "id": "finding_sql_replay",
+          "passed": true,
+          "expected": {
+            "empty_sql_ratio_max": 0.3333333333333333,
+            "replay_failures": []
+          },
+          "actual": {
+            "finding_count": 3,
+            "replayed_sql_count": 3,
+            "empty_sql_count": 0,
+            "empty_sql_ratio": 0.0,
+            "replay_failures": [],
+            "evidence_diagnostics": [
+              {
+                "finding": 1,
+                "text": "门店环比分化明显：上海徐汇旗舰店本周(05-11~05-17)销售额 33,766.14 元，较上周 55,040.48 元下滑约 38.7%，订单数由 170 降至 137，退款单数 16 单，是本周最显著的负向异常门店；同期北京国贸店销售额由 28,864.86 元升至 35,381.17 元、订单数由 87 增至 112，为最强正向增长门店。广州天河店(41,362.04 元)、上海静安店(34,830.37 元)保持稳健增长。",
+                "evidence_ref": "query-3",
+                "has_sql": true
+              },
+              {
+                "finding": 2,
+                "text": "类目环比分化：鞋履本周(05-11~05-17)销售额 152,646.26 元、环比上周 172,574.16 元下滑约 11.6%，服装由 103,661.22 元降至 92,887.76 元（-10.4%），两者是本周主要拖累项；配饰(70,917.93 元, +4.4%)与童装(73,585.24 元, +4.1%)逆势增长。但童装退款单数高达 36 单、对应退款率约 9.0%，显著高于鞋履(4 单)、服装(5 单)、配饰(9 单)，存在 SKU 级质量问题需优先排查。",
+                "evidence_ref": "query-4",
+                "has_sql": true
+              },
+              {
+                "finding": 3,
+                "text": "渠道维度环比（本周 05-11~05-17 vs 上周 05-04~05-10，来自 query-5）：线下渠道销售额由 203,342.23 元降至 161,571.67 元（-20.5%），订单数由 575 降至 469，是本周整体下滑的最大拖累项；抖音渠道销售额由 45,954.89 元升至 67,243.45 元（+46.3%），订单数由 177 猛增至 336，为唯一强劲增长引擎；天猫基本持平（91,784.83 元 vs 90,554.77 元，+1.4%，订单 270 vs 264）；小程序小幅回落（69,437.24 元 vs 75,018.62 元，-7.4%，订单 213 vs 220）。退款单数方面抖音 23 单、线下 43 单需关注，抖音在高速放量同时退款单数同步走高，建议核查其投放人群与履约质量。综合门店与类目结论，本周经营呈现“线下失速、抖音放量”的结构性分化。",
+                "evidence_ref": "query-5",
+                "has_sql": true
+              }
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "anomaly_coverage",
+          "passed": true,
+          "expected": {
+            "minimum_matched": 2,
+            "total": 3
+          },
+          "actual": {
+            "matched_count": 3,
+            "matched_ids": [
+              "sh001",
+              "kids",
+              "douyin"
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "count_invariants",
+          "passed": true,
+          "expected": {
+            "loop_rounds_max": 15,
+            "steps_recorded": 10,
+            "token_used_min": 1
+          },
+          "actual": {
+            "loop_rounds": 10,
+            "steps_recorded": 10,
+            "token_used": 32806,
+            "analysis_steps_count": 10
+          },
+          "details": ""
+        }
+      ],
+      "key_values": {
+        "kpis": {
+          "销售额": {
+            "current": 390037.19,
+            "previous": 414870.51,
+            "unit": "元"
+          },
+          "订单数": {
+            "current": 1288.0,
+            "previous": 1236.0,
+            "unit": "单"
+          },
+          "客单价": {
+            "current": 302.82,
+            "previous": 335.66,
+            "unit": "元"
+          },
+          "退款率": {
+            "current": 7.01,
+            "previous": 4.77,
+            "unit": "%"
+          }
+        },
+        "matched_anomalies": [
+          "sh001",
+          "kids",
+          "douyin"
+        ]
+      },
+      "observations": {
+        "anomaly_full_hit": true,
+        "finding_count": 3,
+        "finding_type_distribution": {
+          "anomaly": 2,
+          "trend": 1
+        },
+        "token_used": 32806,
+        "loop_rounds": 10,
+        "duration_seconds": 34.978,
+        "pack_prompt_estimated_tokens": 937
+      }
+    },
+    {
+      "id": "q2_anomaly_diagnosis",
+      "passed": true,
+      "hard_assertions": [
+        {
+          "id": "status_completed",
+          "passed": true,
+          "expected": "completed",
+          "actual": "completed",
+          "details": ""
+        },
+        {
+          "id": "kpi_values_match",
+          "passed": true,
+          "expected": {
+            "销售额": {
+              "current": 390037.19,
+              "previous": 414870.51
+            },
+            "订单数": {
+              "current": 1288,
+              "previous": 1236
+            },
+            "客单价": {
+              "current": 302.82,
+              "previous": 335.66
+            },
+            "退款率": {
+              "current": 7.01,
+              "previous": 4.77
+            }
+          },
+          "actual": {
+            "销售额": {
+              "current": 390037.19,
+              "previous": 414870.51,
+              "unit": "元"
+            },
+            "订单数": {
+              "current": 1288.0,
+              "previous": 1236.0,
+              "unit": "单"
+            },
+            "客单价": {
+              "current": 302.82,
+              "previous": 335.66,
+              "unit": "元"
+            },
+            "退款率": {
+              "current": 7.01,
+              "previous": 4.77,
+              "unit": "%"
+            }
+          },
+          "details": ""
+        },
+        {
+          "id": "finding_sql_replay",
+          "passed": true,
+          "expected": {
+            "empty_sql_ratio_max": 0.3333333333333333,
+            "replay_failures": []
+          },
+          "actual": {
+            "finding_count": 3,
+            "replayed_sql_count": 3,
+            "empty_sql_count": 0,
+            "empty_sql_ratio": 0.0,
+            "replay_failures": [],
+            "evidence_diagnostics": [
+              {
+                "finding": 1,
+                "text": "童装（线下）本周出现退款异常：本周退款 27 笔 / 137 行，退款率约 19.7%，而上一周仅 5 笔 / 162 行（约 3.1%），单周环比跳升超过 16 个百分点，触发 context pack「单周突增超 5 个百分点需排查具体 SKU 与门店」的预警线；同时童装线下销售额由上周 34130.66 降至本周 27322.47，订单数由 160 降至 127，属于典型的退款冲击销售。",
+                "evidence_ref": "query-3",
+                "has_sql": true
+              },
+              {
+                "finding": 2,
+                "text": "上海徐汇旗舰店是本周最大拖累门店：本周(05-11~05-17)净销售额 33766.14 元，环比上周(05-04~05-10) 55040.48 元下降 38.7%（-21274.34 元），为 14 家门店中跌幅最大者；订单数由 170 降至 137（-19.4%），退款相关行数由 6 升至 16，退款行占比由 3.5% 升至 11.2%。在其余门店本周普遍环比增长的背景下（如北京国贸店 +22.6%、上海静安店 +16.0%、广州天河店 +9.0%），徐汇的逆势下滑与童装退款异常在时间与门店上高度重合，判定为需要优先核查的经营异常。",
+                "evidence_ref": "query-4",
+                "has_sql": true
+              },
+              {
+                "finding": 3,
+                "text": "渠道层面呈现明显分化：抖音是本周期唯一强劲增长的渠道，本周(05-11~05-17)净销售额 67243.45 元，环比上周(05-04~05-10) 45954.89 元增长 46.3%，订单数由 177 激增至 336（+89.8%），但退款行数同步由 9 升至 23（退款行占比由 4.9% 升至 6.7%），属于高速放量伴随退款上升，需关注履约与售后质量。线下渠道则是最主要的拖累来源，本周净销售额 161571.67 元，环比上周 203342.23 元下降 20.5%，订单数由 575 降至 469（-18.4%），退款行由 24 升至 43。天猫基本持平（91784.83 vs 90554.77，+1.4%），小程序小幅下滑（69437.24 vs 75018.62，-7.4%）。综合判断：本周整体走弱主要由线下含徐汇店及童装退款异常所致，而抖音的爆发式增长对冲了一部分下滑。",
+                "evidence_ref": "query-5",
+                "has_sql": true
+              }
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "anomaly_coverage",
+          "passed": true,
+          "expected": {
+            "minimum_matched": 2,
+            "total": 3
+          },
+          "actual": {
+            "matched_count": 3,
+            "matched_ids": [
+              "sh001",
+              "kids",
+              "douyin"
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "count_invariants",
+          "passed": true,
+          "expected": {
+            "loop_rounds_max": 15,
+            "steps_recorded": 9,
+            "token_used_min": 1
+          },
+          "actual": {
+            "loop_rounds": 9,
+            "steps_recorded": 9,
+            "token_used": 30098,
+            "analysis_steps_count": 9
+          },
+          "details": ""
+        }
+      ],
+      "key_values": {
+        "kpis": {
+          "销售额": {
+            "current": 390037.19,
+            "previous": 414870.51,
+            "unit": "元"
+          },
+          "订单数": {
+            "current": 1288.0,
+            "previous": 1236.0,
+            "unit": "单"
+          },
+          "客单价": {
+            "current": 302.82,
+            "previous": 335.66,
+            "unit": "元"
+          },
+          "退款率": {
+            "current": 7.01,
+            "previous": 4.77,
+            "unit": "%"
+          }
+        },
+        "matched_anomalies": [
+          "sh001",
+          "kids",
+          "douyin"
+        ]
+      },
+      "observations": {
+        "anomaly_full_hit": true,
+        "finding_count": 3,
+        "finding_type_distribution": {
+          "anomaly": 2,
+          "trend": 1
+        },
+        "token_used": 30098,
+        "loop_rounds": 9,
+        "duration_seconds": 40.666,
+        "pack_prompt_estimated_tokens": 937
+      }
+    },
+    {
+      "id": "q3_rerun_previous_comparison",
+      "passed": true,
+      "hard_assertions": [
+        {
+          "id": "status_completed",
+          "passed": true,
+          "expected": "completed",
+          "actual": "completed",
+          "details": ""
+        },
+        {
+          "id": "kpi_values_match",
+          "passed": true,
+          "expected": {
+            "销售额": {
+              "current": 327985.38,
+              "previous": 390037.19
+            },
+            "订单数": {
+              "current": 1290,
+              "previous": 1288
+            },
+            "客单价": {
+              "current": 254.25,
+              "previous": 302.82
+            },
+            "退款率": {
+              "current": 7.09,
+              "previous": 7.01
+            }
+          },
+          "actual": {
+            "销售额": {
+              "current": 327985.38,
+              "previous": 390037.19,
+              "unit": "元"
+            },
+            "订单数": {
+              "current": 1290.0,
+              "previous": 1288.0,
+              "unit": "单"
+            },
+            "客单价": {
+              "current": 254.25,
+              "previous": 302.82,
+              "unit": "元"
+            },
+            "退款率": {
+              "current": 7.09,
+              "previous": 7.01,
+              "unit": "%"
+            }
+          },
+          "details": ""
+        },
+        {
+          "id": "finding_sql_replay",
+          "passed": true,
+          "expected": {
+            "empty_sql_ratio_max": 0.3333333333333333,
+            "replay_failures": []
+          },
+          "actual": {
+            "finding_count": 4,
+            "replayed_sql_count": 4,
+            "empty_sql_count": 0,
+            "empty_sql_ratio": 0.0,
+            "replay_failures": [],
+            "evidence_diagnostics": [
+              {
+                "finding": 1,
+                "text": "商品一级类目全线回落：本期(05-18~05-24)四类目销售额均低于上期(05-11~05-17)——鞋履 133,614 元(-12.5%)、服装 76,077 元(-18.1%)、童装 61,103 元(-17.0%)、配饰 57,191 元(-19.4%)，合计 327,985 元、环比 -15.9%，跌幅较上期报告披露的 -6.0%(上期报告口径 390,037 元)进一步扩大。值得注意的是订单数基本持平甚至微增(鞋履 306 单 vs 290 单、服装 290 vs 277)，说明下滑主要由客单价与折扣让利驱动，而非客流流失。",
+                "evidence_ref": "query-3",
+                "has_sql": true
+              },
+              {
+                "finding": 2,
+                "text": "门店维度全线下滑且跌幅集中在头部旗舰/标准店，客单价收缩是主因：上海徐汇旗舰店 15,984 元（环比 -17,782 元，-52.7%，订单 137→71）、上海静安店 18,991 元（-15,839 元，客单价 313.79→206.42）、北京朝阳店 19,368 元（-14,056 元，客单价 351.82→245.16）、北京国贸店 24,275 元（-11,106 元，客单价 315.90→216.74，订单数持平 112 单）。退款率同步恶化：北京朝阳店 4.12%→10.84%、北京国贸店 3.54%→7.83%、上海静安店 7.02%→12.63%，均已突破 context pack 中『单周突增超 5 个百分点需排查 SKU 与门店』的预警线。上海徐汇旗舰店为连续两期下滑（上期报告已披露其环比 -38.7%），为本期门店层最优先复核对象。",
+                "evidence_ref": "query-4",
+                "has_sql": true
+              },
+              {
+                "finding": 3,
+                "text": "渠道维度本期(05-18~05-24)对比上期(05-11~05-17)：线上三大渠道销售额全线下滑，且下滑成因与门店/类目维度不同——天猫 58,148.52 元（上期 91,784.83 元，-33,636.31 元 / -36.6%），订单数 270→171 单（-36.7%），客单价 339.94→340.05 元基本持平、退款率 7.47%→7.43% 未变；小程序 53,593.68 元（上期 69,437.24 元，-22.8%），订单数 213→164 单（-23.0%），客单价 326.00→326.79 元持平，但退款率由 2.80% 升至 5.92%（+3.12 个百分点）；抖音本期 86,320.00 元、586 单、客单价仅 147.30 元、退款率 7.13%，客单价不足天猫/小程序的一半，是拉低整体客单价的重要结构性因素。结论：天猫/小程序的下跌是订单量（流量/转化）流失型，而非折扣让利型；小程序退款率单周上升 3.12pp 虽未达『突增 5 个百分点』预警线，但方向与门店维度退款恶化一致，需与北京朝阳店、北京国贸店、上海静安店一并核查具体 SKU。",
+                "evidence_ref": "query-5",
+                "has_sql": true
+              },
+              {
+                "finding": 4,
+                "text": "本周复盘结论与行动建议（基于已核对的三个维度数据，均取自本期 05-18~05-24 对比上期 05-11~05-17）：【整体】本期四类目合计销售额 327,985 元，环比 -15.9%，跌幅较上期报告披露的 -6.0%（上期报告口径 390,037 元）明显扩大，经营压力延续而非反转。【结构诊断】下滑分两条互不相同的路径——① 门店与类目维度是『折扣让利/客单价塌陷型』：订单数基本持平（鞋履 306 vs 290 单、北京国贸 112 单持平），但客单价大幅收缩（上海静安 313.79→206.42 元、北京朝阳 351.82→245.16 元、北京国贸 315.90→216.74 元）；② 渠道维度是『流量/转化流失型』：天猫订单 270→171 单、小程序 213→164 单，客单价基本持平（339.94→340.05、326.00→326.79）。【优先复核清单】1) 上海徐汇旗舰店——本期 15,984 元、环比 -52.7%（-17,782 元），且上期报告已披露其环比 -38.7%，属连续两期加速下滑，为第一优先级。2) 北京朝阳店（-14,056 元，退款率 4.12%→10.84%）、北京国贸店（-11,106 元，退款率 3.54%→7.83%）、上海静安店（-15,839 元，退款率 7.02%→12.63%）——三家退款率单周升幅均超过 context pack 规定的 5 个百分点预警线，需立即按 SKU 排查退货原因（尺码/质量/发货错误）。3) 小程序渠道——退款率由 2.80% 升至 5.92%（+3.12pp），虽未达 5pp 预警线但方向与上述门店一致，建议与门店退款 SKU 交叉比对，确认是否为同一批商品或同一批订单批次导致。4) 抖音渠道——本期 86,320 元、586 单（订单量最大），但客单价仅 147.30 元、不足天猫/小程序的一半，是整体客单价被结构性拉低的直接原因，需明确其低价引流定位是否在侵蚀整体毛利，建议单独核算其折扣与毛利表现。",
+                "evidence_ref": "query-3",
+                "has_sql": true
+              }
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "anomaly_coverage",
+          "passed": true,
+          "expected": {
+            "minimum_matched": 2,
+            "total": 3
+          },
+          "actual": {
+            "matched_count": 3,
+            "matched_ids": [
+              "sh001",
+              "kids",
+              "douyin"
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "count_invariants",
+          "passed": true,
+          "expected": {
+            "loop_rounds_max": 15,
+            "steps_recorded": 10,
+            "token_used_min": 1
+          },
+          "actual": {
+            "loop_rounds": 10,
+            "steps_recorded": 10,
+            "token_used": 37601,
+            "analysis_steps_count": 10
+          },
+          "details": ""
+        },
+        {
+          "id": "previous_comparison_present",
+          "passed": true,
+          "expected": [
+            "baseline",
+            "previous_ran_at",
+            "previous_report_id",
+            "previous_status",
+            "previous_time_range",
+            "same_period",
+            "summary_note"
+          ],
+          "actual": [
+            "baseline",
+            "previous_ran_at",
+            "previous_report_id",
+            "previous_status",
+            "previous_time_range",
+            "same_period",
+            "summary_note"
+          ],
+          "details": ""
+        },
+        {
+          "id": "previous_report_resolvable",
+          "passed": true,
+          "expected": {
+            "founding_report_id": "15b1e3db-fa3f-4c12-bc21-89d39ca7e588",
+            "stored": true
+          },
+          "actual": {
+            "previous_report_id": "15b1e3db-fa3f-4c12-bc21-89d39ca7e588",
+            "stored": true
+          },
+          "details": ""
+        },
+        {
+          "id": "previous_comparison_delta_math",
+          "passed": true,
+          "expected": {
+            "销售额": {
+              "previous_value": 390037.19,
+              "current_value": 327985.38,
+              "delta_value": -15.91,
+              "delta_unit": "%"
+            },
+            "订单数": {
+              "previous_value": 1288,
+              "current_value": 1290,
+              "delta_value": 0.16,
+              "delta_unit": "%"
+            },
+            "客单价": {
+              "previous_value": 302.82,
+              "current_value": 254.25,
+              "delta_value": -16.04,
+              "delta_unit": "%"
+            },
+            "退款率": {
+              "previous_value": 7.01,
+              "current_value": 7.09,
+              "delta_value": 0.08,
+              "delta_unit": "pp"
+            }
+          },
+          "actual": {
+            "销售额": {
+              "previous_value": 390037.19,
+              "current_value": 327985.38,
+              "delta_value": -15.91,
+              "delta_unit": "%"
+            },
+            "订单数": {
+              "previous_value": 1288.0,
+              "current_value": 1290.0,
+              "delta_value": 0.16,
+              "delta_unit": "%"
+            },
+            "客单价": {
+              "previous_value": 302.82,
+              "current_value": 254.25,
+              "delta_value": -16.04,
+              "delta_unit": "%"
+            },
+            "退款率": {
+              "previous_value": 7.01,
+              "current_value": 7.09,
+              "delta_value": 0.08,
+              "delta_unit": "pp"
+            }
+          },
+          "details": ""
+        },
+        {
+          "id": "same_period_false",
+          "passed": true,
+          "expected": false,
+          "actual": false,
+          "details": ""
+        }
+      ],
+      "key_values": {
+        "kpis": {
+          "销售额": {
+            "current": 327985.38,
+            "previous": 390037.19,
+            "unit": "元"
+          },
+          "订单数": {
+            "current": 1290.0,
+            "previous": 1288.0,
+            "unit": "单"
+          },
+          "客单价": {
+            "current": 254.25,
+            "previous": 302.82,
+            "unit": "元"
+          },
+          "退款率": {
+            "current": 7.09,
+            "previous": 7.01,
+            "unit": "%"
+          }
+        },
+        "matched_anomalies": [
+          "sh001",
+          "kids",
+          "douyin"
+        ],
+        "previous_comparison": {
+          "previous_report_id": "15b1e3db-fa3f-4c12-bc21-89d39ca7e588",
+          "previous_status": "completed",
+          "same_period": false,
+          "baseline": [
+            {
+              "name": "销售额",
+              "previous_value": 390037.19,
+              "current_value": 327985.38,
+              "delta_value": -15.91,
+              "delta_unit": "%",
+              "severity": "significant"
+            },
+            {
+              "name": "订单数",
+              "previous_value": 1288.0,
+              "current_value": 1290.0,
+              "delta_value": 0.16,
+              "delta_unit": "%",
+              "severity": "normal"
+            },
+            {
+              "name": "客单价",
+              "previous_value": 302.82,
+              "current_value": 254.25,
+              "delta_value": -16.04,
+              "delta_unit": "%",
+              "severity": "significant"
+            },
+            {
+              "name": "退款率",
+              "previous_value": 7.01,
+              "current_value": 7.09,
+              "delta_value": 0.08,
+              "delta_unit": "pp",
+              "severity": null
+            }
+          ]
+        }
+      },
+      "observations": {
+        "anomaly_full_hit": true,
+        "finding_count": 4,
+        "finding_type_distribution": {
+          "anomaly": 3,
+          "recommendation": 1
+        },
+        "token_used": 37601,
+        "loop_rounds": 10,
+        "previous_reference_signal": {
+          "keywords_matched": [
+            "上期",
+            "连续",
+            "较上期"
+          ],
+          "baseline_value_hits": [
+            "销售额",
+            "订单数",
+            "客单价",
+            "退款率"
+          ],
+          "any": true
+        },
+        "duration_seconds": 43.867,
+        "pack_prompt_estimated_tokens": 937
+      }
+    },
+    {
+      "id": "q4_capture_alias_edit",
+      "passed": true,
+      "hard_assertions": [
+        {
+          "id": "status_completed",
+          "passed": true,
+          "expected": "completed",
+          "actual": "completed",
+          "details": ""
+        },
+        {
+          "id": "kpi_values_match",
+          "passed": true,
+          "expected": {
+            "销售额": {
+              "current": 390037.19,
+              "previous": 414870.51
+            },
+            "订单数": {
+              "current": 1288,
+              "previous": 1236
+            },
+            "客单价": {
+              "current": 302.82,
+              "previous": 335.66
+            },
+            "退款率": {
+              "current": 7.01,
+              "previous": 4.77
+            }
+          },
+          "actual": {
+            "销售额": {
+              "current": 390037.19,
+              "previous": 414870.51,
+              "unit": "元"
+            },
+            "订单数": {
+              "current": 1288.0,
+              "previous": 1236.0,
+              "unit": "单"
+            },
+            "客单价": {
+              "current": 302.82,
+              "previous": 335.66,
+              "unit": "元"
+            },
+            "退款率": {
+              "current": 7.01,
+              "previous": 4.77,
+              "unit": "%"
+            }
+          },
+          "details": ""
+        },
+        {
+          "id": "finding_sql_replay",
+          "passed": true,
+          "expected": {
+            "empty_sql_ratio_max": 0.3333333333333333,
+            "replay_failures": []
+          },
+          "actual": {
+            "finding_count": 4,
+            "replayed_sql_count": 4,
+            "empty_sql_count": 0,
+            "empty_sql_ratio": 0.0,
+            "replay_failures": [],
+            "evidence_diagnostics": [
+              {
+                "finding": 1,
+                "text": "最近一个完整自然周（2026-05-11~17）销售额 39.0 万元，较上周（05-04~10）41.5 万元环比下滑约 6.0%；同期退款订单数由 60 笔升至 93 笔，退款率由 4.8% 升至 7.0%（+2.2 个百分点），而订单数小幅增长（1236→1288），说明本周销售额下滑主要由退款增多与客单价走低（335.7→302.8 元，-9.8%）驱动，而非客流萎缩。",
+                "evidence_ref": "query-1",
+                "has_sql": true
+              },
+              {
+                "finding": 2,
+                "text": "门店层面本周最异常的样本是上海徐汇旗舰店：最近完整周（2026-05-11~17）销售额 33,766 元，较上周 55,040 元环比下滑约 38.6%，为门店中降幅最大者；其退款订单数同期由 6 笔升至 16 笔，退款率显著抬升，且订单数由 170 单降至 137 单，属销售与退款双重走弱。另一侧上海静安店表现相反，销售额由 30,028 元升至 34,830 元、订单数由 92 升至 111，为本周少数增长门店。",
+                "evidence_ref": "query-2",
+                "has_sql": true
+              },
+              {
+                "finding": 3,
+                "text": "类目维度本周（2026-05-11~17）vs 上周（05-04~10）：鞋履为最大类目且降幅最大，销售额由 17.26 万元降至 15.26 万元（约 -11.6%），订单数 305→290；服装同样走弱，销售额 10.37 万降至 9.29 万（约 -10.4%），订单数 283→277。与之相反，童装逆势增长，销售额由 7.07 万升至 7.36 万（约 +4.1%），订单数 355→398（+12%）；配饰由 6.79 万升至 7.09 万（约 +4.4%），订单数 293→323。整体销售额下滑主要由鞋履与服装两大核心类目拖累，童装与配饰提供正向对冲。",
+                "evidence_ref": "query-3",
+                "has_sql": true
+              },
+              {
+                "finding": 4,
+                "text": "客户类型维度本周（2026-05-11~17）vs 上周（05-04~10）：新客销售额 206,175 元 vs 210,693 元（约 -2.1%），但订单数由 629 升至 667（+6.0%），客单价由约 335 元降至约 309 元；老客下滑更明显，销售额由 204,178 元降至 183,862 元（约 -9.9%），订单数 607→621（+2.3%），客单价由约 336 元降至约 296 元（约 -12%）。本周整体销售额下滑主要由老客贡献收缩驱动，而新老客订单数均小幅增长，说明降幅来自单均金额下降（配合整体退款率由 4.8% 升至 7.0%），而非到店客流减少。",
+                "evidence_ref": "query-4",
+                "has_sql": true
+              }
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "count_invariants",
+          "passed": true,
+          "expected": {
+            "loop_rounds_max": 15,
+            "steps_recorded": 9,
+            "token_used_min": 1
+          },
+          "actual": {
+            "loop_rounds": 9,
+            "steps_recorded": 9,
+            "token_used": 28676,
+            "analysis_steps_count": 9
+          },
+          "details": ""
+        },
+        {
+          "id": "capture_field_unrecognized",
+          "passed": true,
+          "expected": {
+            "unrecognized": [
+              "channel"
+            ],
+            "still_recognized": [
+              "net_sales_amount",
+              "order_date"
+            ]
+          },
+          "actual": {
+            "recognized": [
+              "category_l1",
+              "customer_type",
+              "discount_amount",
+              "gross_sales_amount",
+              "net_sales_amount",
+              "order_date",
+              "order_id",
+              "order_status",
+              "product_name",
+              "quantity",
+              "refund_amount",
+              "store_id",
+              "store_name",
+              "unit_cost"
+            ]
+          },
+          "details": ""
+        },
+        {
+          "id": "capture_version_traced",
+          "passed": true,
+          "expected": {
+            "version": "1.0.0-local.1",
+            "pattern": "{base}-local.{N}"
+          },
+          "actual": {
+            "report_version": "1.0.0-local.1",
+            "stored_version": "1.0.0-local.1",
+            "edited_version": "1.0.0-local.1",
+            "pre_edit_version": "1.0.0"
+          },
+          "details": ""
+        },
+        {
+          "id": "capture_control",
+          "passed": true,
+          "expected": {
+            "pre_edit": {
+              "recognizes_edited_and_required": true,
+              "is_modified": false
+            },
+            "post_reset": {
+              "recognizes_edited_and_required": true,
+              "is_modified": false,
+              "version_advanced": true
+            }
+          },
+          "actual": {
+            "pre_edit": {
+              "recognizes_edited_and_required": true,
+              "is_modified": false
+            },
+            "post_reset": {
+              "recognizes_edited_and_required": true,
+              "is_modified": false,
+              "version_advanced": true
+            }
+          },
+          "details": ""
+        }
+      ],
+      "key_values": {
+        "kpis": {
+          "销售额": {
+            "current": 390037.19,
+            "previous": 414870.51,
+            "unit": "元"
+          },
+          "订单数": {
+            "current": 1288.0,
+            "previous": 1236.0,
+            "unit": "单"
+          },
+          "客单价": {
+            "current": 302.82,
+            "previous": 335.66,
+            "unit": "元"
+          },
+          "退款率": {
+            "current": 7.01,
+            "previous": 4.77,
+            "unit": "%"
+          }
+        },
+        "matched_anomalies": [
+          "sh001",
+          "kids"
+        ],
+        "capture": {
+          "edited_fields": [
+            "channel"
+          ],
+          "required_fields": [
+            "net_sales_amount",
+            "order_date"
+          ],
+          "pre_edit": {
+            "recognized": [
+              "category_l1",
+              "channel",
+              "customer_type",
+              "discount_amount",
+              "gross_sales_amount",
+              "net_sales_amount",
+              "order_date",
+              "order_id",
+              "order_status",
+              "product_name",
+              "quantity",
+              "refund_amount",
+              "store_id",
+              "store_name",
+              "unit_cost"
+            ],
+            "version": "1.0.0",
+            "is_modified": false
+          },
+          "edited_version": "1.0.0-local.1",
+          "report": {
+            "report_id": "81fcf5fa-149b-4e47-a8ef-8069d41c2d7b",
+            "recognized": [
+              "category_l1",
+              "customer_type",
+              "discount_amount",
+              "gross_sales_amount",
+              "net_sales_amount",
+              "order_date",
+              "order_id",
+              "order_status",
+              "product_name",
+              "quantity",
+              "refund_amount",
+              "store_id",
+              "store_name",
+              "unit_cost"
+            ],
+            "stored_version": "1.0.0-local.1"
+          },
+          "post_reset": {
+            "recognized": [
+              "category_l1",
+              "channel",
+              "customer_type",
+              "discount_amount",
+              "gross_sales_amount",
+              "net_sales_amount",
+              "order_date",
+              "order_id",
+              "order_status",
+              "product_name",
+              "quantity",
+              "refund_amount",
+              "store_id",
+              "store_name",
+              "unit_cost"
+            ],
+            "version": "1.0.0-local.2",
+            "is_modified": false
+          }
+        }
+      },
+      "observations": {
+        "anomaly_full_hit": false,
+        "finding_count": 4,
+        "finding_type_distribution": {
+          "anomaly": 2,
+          "trend": 2
+        },
+        "token_used": 28676,
+        "loop_rounds": 9,
+        "anomaly_coverage": {
+          "matched_count": 2,
+          "matched_ids": [
+            "sh001",
+            "kids"
+          ]
+        },
+        "capture_narrative_signal": {
+          "channel_dimension_mentioned": true,
+          "channel_values_mentioned": []
+        },
+        "duration_seconds": 28.575,
+        "pack_prompt_estimated_tokens": 939
+      }
+    }
+  ]
+}

@@ -1,5 +1,12 @@
 // Shared view-model helpers: formatting + field-role derivation + chart-spec table extraction.
-import type { ColumnSummary, FieldProfile, KPI, ReportPayload } from '../api/client'
+import type {
+  ColumnSummary,
+  FieldProfile,
+  KPI,
+  PreviousComparisonEntry,
+  ReportPayload,
+} from '../api/client'
+import { formatDateTime } from './history'
 
 export type FieldRole = '时间' | '指标' | '维度' | '标记' | '标识'
 
@@ -134,14 +141,24 @@ function formatCell(value: unknown): string {
 
 export function reportRunInfo(report: ReportPayload) {
   const meta = report.metadata
+  const stepsRecorded = meta.steps_recorded ?? meta.iterations_used ?? 0
   return {
     dataSource: meta.data_source?.name ?? '—',
-    ranAt: meta.ran_at ?? '—',
+    ranAt: formatDateTime(meta.ran_at),
     model: meta.model ?? 'not_configured',
-    iterations: `${meta.iterations_used ?? 0} / ${meta.iterations_used ? 8 : 8}`,
+    analysisCounts: formatAnalysisCounts(meta.loop_rounds, stepsRecorded),
     rowCount: meta.row_count ?? 0,
     tokenUsed: meta.token_used ?? 0,
   }
+}
+
+export function formatAnalysisCounts(
+  loopRounds: number | null | undefined,
+  stepsRecorded: number | null | undefined,
+): string {
+  const steps = stepsRecorded ?? 0
+  if (loopRounds === null || loopRounds === undefined) return `记录步骤 ${steps} 步`
+  return `循环轮次 ${loopRounds} 轮 · 记录步骤 ${steps} 步`
 }
 
 // SQL syntax highlighting → HTML string (kw/fn/lit). Ported from design highlightSQL.
@@ -156,4 +173,30 @@ export function highlightSQL(sql: string): string {
     .replace(kw, '<span class="kw">$1</span>')
     .replace(fn, '<span class="fn">$1</span>')
     .replace(lit, '<span class="lit">$&</span>')
+}
+
+// ---- 跨报告对比（previous_comparison）呈现工具 ----
+export function formatComparisonValue(value: number | null, unit: string): string {
+  if (value === null || value === undefined) return '—'
+  if (unit === '元') return `¥${value.toLocaleString('zh-CN')}`
+  if (unit === '%') return `${value.toFixed(2)}%`
+  return unit ? `${value.toLocaleString('zh-CN')} ${unit}` : value.toLocaleString('zh-CN')
+}
+
+// 率值指标显示百分点差（pp，两位小数）；其余显示变化率（%，一位小数）；缺上期或上期为 0 不编造。
+export function formatComparisonDelta(entry: PreviousComparisonEntry): string {
+  if (entry.delta_value === null || entry.delta_value === undefined) {
+    return entry.previous_value === null || entry.previous_value === undefined ? '上期无此指标' : '不可比'
+  }
+  const sign = entry.delta_value > 0 ? '+' : ''
+  if (entry.delta_unit === 'pp') return `${sign}${entry.delta_value.toFixed(2)} pp`
+  return `${sign}${entry.delta_value.toFixed(1)}%`
+}
+
+// 着色只映射后端 severity（阈值在服务端），pp 条目与不可比条目不着色。
+export function comparisonDeltaClass(entry: PreviousComparisonEntry): string {
+  if (entry.delta_value === null || entry.delta_value === undefined) return 'sev-na'
+  if (entry.severity === 'critical') return 'sev-critical'
+  if (entry.severity === 'significant') return 'sev-significant'
+  return ''
 }
