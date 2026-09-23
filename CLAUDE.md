@@ -2,7 +2,7 @@
 
 AI 经营分析 Agent：连接 CSV / Excel，用户自配 OpenAI-compatible 模型（BYOM），用自然语言发起分析，自动完成取数、分析、制图，产出每条结论可核对（SQL / 数据源 / 运行时间）的经营诊断报告。分析任务可保存，用同结构的新数据重跑时报告自动对比上期。开源自部署（Docker）。零售经营分析为首个内置场景。
 
-> 本文件是公开仓库的工程约定（技术栈、目录约定、验证、协作纪律）。面向贡献者与自部署者。
+> 本文件是公开仓库的工程约定（技术栈、目录约定、验证、协作纪律），面向贡献者及其使用的 AI 编码助手；安装与使用说明见 `README.md`。
 
 ## 技术栈与版本
 - 后端：Python 3.11 + FastAPI + SQLAlchemy 2.0 + openai SDK + pandas/openpyxl + sqlglot；包管理 uv（锁文件 `uv.lock` 必须提交）
@@ -31,17 +31,22 @@ data-insight-agent/
 │   ├── eval/                   # 报告质量 eval：golden questions / runner / 断言 / 基线 / fixtures（make eval）
 │   ├── scripts/                # 样例数据生成脚本
 │   └── tests/                  # 后端测试（含 eval 确定性断言层，随 make check 运行）
-├── frontend/src/
-│   ├── AppShell.tsx            # 三栏外壳 + 状态机入口
-│   ├── components/             # 组件（对话 / 报告 / 分析任务 / 业务口径编辑 / 反馈 / 模型配置 / charts）
-│   ├── api/ · lib/ · styles/   # API 客户端 / 状态机、视图与时间格式化工具 / 样式（app.css 含 @media print）
-│   ├── pages/                  # 预留
-│   └── **/*.test.ts(x)         # Vitest 单测，与被测文件同目录（随 make check 与 CI 运行）
+├── frontend/
+│   ├── package.json · pnpm-lock.yaml   # 依赖与 pnpm 版本（packageManager）/ 锁文件
+│   ├── pnpm-workspace.yaml             # pnpm 依赖构建白名单（allowBuilds），Docker 构建需要
+│   └── src/
+│       ├── AppShell.tsx        # 三栏外壳 + 状态机入口
+│       ├── components/         # 组件（对话 / 报告 / 分析任务 / 业务口径编辑 / 反馈 / 模型配置 / charts）
+│       ├── api/ · lib/ · styles/  # API 客户端 / 状态机、视图与时间格式化工具 / 样式（app.css 含 @media print）
+│       ├── pages/              # 预留
+│       └── **/*.test.ts(x)     # Vitest 单测，与被测文件同目录（随 make check 与 CI 运行）
 ├── docs/architecture.md        # 架构契约
 ├── Dockerfile                  # 单容器多阶段构建（前端 build → 后端托管 dist）
 ├── docker-compose.yml          # 用户态（拉预构建镜像一行起）
 ├── docker-compose.dev.yml      # 源码构建覆盖文件
-├── Makefile, .github/workflows/  # 验证入口 / CI + 镜像构建推送
+├── Makefile                    # 验证入口（make check / smoke / eval）
+├── .github/workflows/          # CI（lint / test / build）+ 多架构镜像构建推送
+├── .github/assets/             # README 截图（只用内置样例数据截取）
 └── .env.example
 ```
 
@@ -93,8 +98,17 @@ data-insight-agent/
 - 跨后端/前端/契约的改动，先完成实现侧自检，再做 review 侧检查
 - 完成结论必须有新鲜验证证据支撑；环境不可用时按「代码验证完成 / 环境验证未完成」分层说明
 
+## 安全与数据
+- 密钥、token、密码不进代码、提交与日志；API key 不出现在接口响应、日志与报告中（`docs/architecture.md` §4.1）
+- 仓库里只放合成数据：样例与 eval fixture 由 `backend/scripts/` 的生成脚本产出，真实业务数据不进仓库
+- 应用没有内置登录；涉及端口暴露、鉴权或数据外发的改动先出方案
+
+## 贡献方式
+- 本仓库由维护者同步发布；外部改动先开 Issue 讨论，经维护者合入后随下一次发布进入本仓库
+
 ## 规则文件同步
 - `CLAUDE.md` 与 `AGENTS.md` 内容一致（供不同工具读取），改其一须同步另一。
 
 ## 上下文索引
-- 架构契约：`docs/architecture.md`（workflow 外壳 + agentic 内核 + API 与 eval 契约 + Context Pack Schema 与存储 + 执行控制硬约束）
+- 使用说明：`README.md` / `README.zh-CN.md`
+- 架构契约：`docs/architecture.md`（workflow 外壳 + agentic 内核 + API 与 eval 契约 + 时间戳契约 + Context Pack Schema 与存储 + 执行控制硬约束 + 待定契约项）

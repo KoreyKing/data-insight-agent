@@ -2,100 +2,124 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Self-hosted AI business analyst.** Point it at a CSV / Excel file, ask a question in plain language, and get a business diagnostic report where **every conclusion can be checked** — each finding carries the SQL it ran, the data source, and the run time. No black-box summaries.
+**Self-hosted AI business analyst.** Point it at a CSV / Excel file, say what you want to know in plain language, and get a business diagnostic report where **every conclusion can be checked**: each finding carries the SQL it ran, the data source and the run time.
 
 [简体中文 →](README.zh-CN.md)
 
+![Report view: KPI cards, a finding with its chart, and the SQL evidence behind it](.github/assets/product-report.png)
+
+<sub>A report on the built-in retail sample, generated with an OpenAI-compatible model. The UI is currently Chinese-first.</sub>
+
 ## Why it's different
 
-Most "chat with your data" tools give you answers you take on faith, on someone else's servers, with their model. This one:
+- **Verifiable reports, not chat replies.** Every conclusion links to its SQL, data source and run time, and KPI changes are computed by the system rather than written by the model. Reports export to PDF.
+- **Runs on your machine.** One Docker container. Nobody but you hosts or sees your data.
+- **Bring your own model.** Any OpenAI-compatible API: OpenAI, DeepSeek, Qwen (DashScope), Kimi, Zhipu GLM, Gemini, OpenRouter, or a local Ollama / vLLM server.
+- **Business rules you can edit.** Analysis is grounded in an industry context pack — metric definitions, field aliases, anomaly thresholds — that you adjust in the UI. Retail operations is the first built-in pack.
 
-- **Writes verifiable reports, not chat replies.** Every conclusion links to its SQL, data source and run time. Reports are built for review and sharing, with PDF export.
-- **Runs on your machine.** Deploy with Docker. The product vendor never hosts or sees your data.
-- **Bring your own model (BYOM).** Any OpenAI-compatible API works — OpenAI, DeepSeek, Qwen, OpenRouter, local Ollama. You control the model and the data path.
-- **Industry context packs.** Analysis is grounded in an industry semantic layer — metric definitions, dimensions, analysis templates, validation rules — instead of generic prompting. Retail operations is the first built-in pack.
+## What you can do
 
-## What it does
-
-1. Upload a CSV or `.xlsx`, or load the built-in retail sample with one click.
-2. Describe what you want to know, e.g. *"Compare this week vs last week and flag underperforming stores."*
-3. It parses your goal into a structured task for you to confirm, then runs a bounded analysis loop: query, drill down, chart.
-4. You get a report with key metrics, findings, charts and suggested next steps — every conclusion has a "view evidence" toggle.
-5. Reports and datasets are persisted: browse history read-only, re-open past reports, export to PDF.
-6. Save a report as a reusable analysis task. Next period, upload a file with the same structure and rerun it: the new report joins the task's report chain and opens with a "vs. previous report" section whose KPI changes are computed by the system, not the model, with a link back to the previous report. A file with a different structure is stopped before the run, with the missing / extra fields listed.
-7. Edit the business rules the analysis runs on — metric definitions, field aliases, anomaly thresholds — in the web UI, with server-side validation and one-click reset. Every report records the rule version it was generated with.
-8. Mark any report useful / not useful with a one-line note; feedback stays in your local database.
+- **Analyze a file.** Upload a CSV / `.xlsx` (or load the built-in retail sample), describe your goal, confirm the structured task, and get a report with key metrics, findings, charts and suggested next steps.
+- **Rerun next period.** Save a report as a task, then upload next period's file with the same structure and rerun it. The new report opens with a "vs. previous report" section. A file with a different structure is stopped before the run, with the missing / extra fields listed.
+- **Edit business rules.** Change metric definitions, field aliases and anomaly thresholds, with server-side validation and one-click reset. Every report records the rule version it was generated with.
+- **Keep a history.** Past reports and datasets stay browsable. Mark any report useful / not useful with a one-line note; feedback stays in your local database.
 
 ## Quick start
 
-Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with Compose v2).
 
 ```bash
+git clone https://github.com/KoreyKing/data-insight-agent.git
+cd data-insight-agent
 docker compose up -d
 ```
 
-- App: <http://localhost:8000> (frontend and API in one container)
-- Health check: <http://localhost:8000/health>
+Open <http://localhost:8000>. The first run pulls a prebuilt image (amd64 / arm64) from ghcr.
 
-First run pulls a prebuilt multi-arch image from ghcr. **It works without a model**: use the sample-report entry on the home screen to run the full flow on built-in retail data (demo mode, fully offline).
+**No model is needed to try it.** Click 「使用零售样例」 (use the retail sample) and run the full flow in demo mode: a deterministic report on built-in data, with no model calls.
 
 ## Configure your model
 
-To analyze your own data with natural language, configure any OpenAI-compatible endpoint. Two ways:
+To analyze your own data, configure an OpenAI-compatible endpoint:
 
-- **In the UI (recommended)**: sidebar → model settings — pick a provider preset or a custom base URL, test the connection, save. The key is stored locally with file permissions `600`, masked in responses, and never written to logs or reports.
-- **Via `.env`**:
+- **In the UI (recommended):** sidebar → model settings. Pick a preset or enter a base URL, test the connection, save. The key is stored in `data/llm_config.json` (file permissions `600`), masked in responses and never written to logs or reports. UI settings take precedence over `.env`.
+- **Via `.env`:**
 
 ```bash
 cp .env.example .env
+#   LLM_PROVIDER  preset (openai / deepseek / dashscope / kimi / zhipu /
+#                 gemini / openrouter / ollama / vllm) or custom
+#   LLM_BASE_URL  endpoint (required for custom, optional with a preset)
 #   LLM_API_KEY   your key
-#   LLM_PROVIDER  preset name (e.g. deepseek / openai / openrouter), or leave empty and set:
-#   LLM_BASE_URL  custom OpenAI-compatible endpoint
 #   LLM_MODEL     model name
-docker compose up -d   # restart to apply
+docker compose up -d --force-recreate   # apply the new settings
 ```
+
+Pick a model that follows JSON instructions reliably; very small models tend to break the analysis loop.
+
+## Use your own data
+
+- **Format:** plain tables with a single header row — CSV (UTF-8) or `.xlsx` (choose the sheet in the UI). Merged cells, multi-row headers and pivot tables are not supported.
+- **Columns:** one row per order line. An **order date** and a **net sales amount** are required. Store, product category and channel enable drill-down; order ID, order status, refund amount and unit cost enable accurate order counts, refund rate and gross margin.
+- **Column names** are matched through aliases, e.g. `订单日期` / `date`, `门店` / `store`, `销售额` / `net_sales`. If a column is not recognized, add your header as an alias in 「业务口径设置」 (business rules).
+- **Order status**, if present, must use the values `completed`, `partial_refund` and `refunded`. Without an order-status column every row counts as completed.
 
 ## Data & privacy
 
-- The vendor hosts nothing. The app runs on your machine; analysis data lives in a local SQLite file and temporary upload files.
-- When a remote model is configured, the data schema, aggregated query results and prompts are sent to **the model provider you chose** — raw row-level records are not sent.
-- Demo mode (no model configured) runs fully locally and sends nothing anywhere.
+- Everything stays on your machine: reports, datasets and settings live in `./data` (a SQLite file plus uploaded files).
+- With a remote model configured, the data schema, aggregated query results and prompt text are sent to **the model provider you chose**. Raw row-level records are not sent.
+- Demo mode makes no model calls. The web UI loads its fonts from Google Fonts; apart from that, the app does not contact third parties.
+
+## Security
+
+- There is **no login or user management**. Anyone who can reach port 8000 can read your reports and change the model settings.
+- `docker-compose.yml` publishes port 8000 on all network interfaces. For local-only use, change the mapping to `"127.0.0.1:8000:8000"`. Do not expose the app to the internet without an authenticating reverse proxy in front of it.
+
+## Upgrade & backup
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+The database structure upgrades automatically on startup (new tables and columns only; existing data is kept). Back up the `./data` directory before upgrading.
+
+## Current limitations
+
+- One data model: a single retail sales table, through the built-in retail pack.
+- Reports run on demand; scheduled runs and push delivery are not available yet.
+- The UI is Chinese-first.
+- The written analysis can over-generalize. The numbers are reproducible, so check them against the attached SQL before acting on a conclusion.
+- Single user, no access control (see [Security](#security)).
 
 ## Roadmap
 
-- Scheduled recurring reports with email / webhook / IM-card push (next up)
+- Scheduled recurring reports with email / webhook / IM-card push
 - MySQL / PostgreSQL read-only connections
-- One-command local run via `uvx`; English UI (the UI is currently Chinese-first)
-- Second industry pack: SaaS operations
-
-## Requirements
-
-- Docker Desktop (recommended path, the only hard requirement).
-- Local development (optional): Python 3.11+, Node 22.13+, `uv`, `pnpm` (the version is pinned by `packageManager` in `frontend/package.json`).
-
-## Local development (optional)
-
-```bash
-make dev            # start backend + frontend
-make backend-dev    # backend only
-make frontend-dev   # frontend only
-make check          # backend lint+tests, frontend typecheck+lint+tests+build
-make smoke          # build the Docker image from source, start it, check /health and /
-make eval           # report-quality eval: golden questions against your configured model, in an isolated temp database
-```
-
-`http://localhost:5173` is the Vite dev server and proxies `/api` to `http://127.0.0.1:8000`, so the backend must be running for reports, samples and uploads.
+- One-command local run via `uvx`; English UI
+- A second industry pack: SaaS operations
 
 ## FAQ
 
-- **Port 8000 is blank / unreachable**: make sure `docker compose up -d` succeeded and the container is running (the first run pulls the image from ghcr — give it a moment).
-- **Report generation says the model is not configured**: without a model only the built-in retail sample works (demo mode). Configure a model to analyze your own data.
-- **Upload fails**: plain two-dimensional tables with a header row are supported (CSV and `.xlsx`). Complex headers, merged cells and pivot sheets are not supported yet.
-- **The UI is in Chinese**: an English UI is on the roadmap; report structure (metrics, charts, SQL evidence) is readable regardless.
+- **Port 8000 is blank or unreachable:** check that `docker compose up -d` succeeded and the container is running; the first run needs time to pull the image.
+- **"Model not configured":** without a model only the built-in sample works (demo mode). Configure a model to analyze your own files.
+- **Ollama / vLLM on the same machine doesn't connect:** inside Docker, `localhost` is the container itself. Use a custom base URL such as `http://host.docker.internal:11434/v1` (Docker Desktop; on Linux, add `extra_hosts: ["host.docker.internal:host-gateway"]` to the service).
+- **Upload fails or fields are missing:** see [Use your own data](#use-your-own-data).
 
-## Architecture
+## Development
 
-Three layers: a deterministic workflow shell (scheduling, data connections, report assembly) + a bounded agentic analysis core (fixed tool set, hard iteration cap, every SQL statement passes an execution-control layer) + industry context packs (the semantic layer). Contract: [docs/architecture.md](docs/architecture.md).
+Requires Python 3.11+, Node 22.13+, `uv` and `pnpm` (the version is pinned by `packageManager` in `frontend/package.json`).
+
+```bash
+make dev     # backend + frontend (Vite on http://localhost:5173, /api proxied to :8000)
+make check   # backend lint + tests, frontend typecheck + lint + tests + build
+make smoke   # build the Docker image from source, start it, check /health and /
+make eval    # report-quality eval against your configured model, in an isolated temp database
+```
+
+- **Architecture and API contracts:** [docs/architecture.md](docs/architecture.md). Three layers: a deterministic workflow shell (data connections and report assembly; scheduling and push are planned), a bounded agentic analysis core (fixed tool set, hard iteration cap, every SQL statement validated) and industry context packs.
+- **Engineering conventions**, also read by AI coding assistants: [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md).
+- **Feedback:** bug reports and ideas go to GitHub Issues. This repository is published from the maintainer's workspace, so please open an issue to discuss a change before sending a pull request.
 
 ## License
 
